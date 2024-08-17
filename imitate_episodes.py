@@ -46,7 +46,6 @@ def main(args):
     num_epochs = args['num_epochs']
 
     # get task parameters
-    # is_sim = task_name[:4] == 'sim_'
     task_dir, task_name = parse_id(RECORD_DIR, args['taskid'])
     dataset_dir = (Path(task_dir) / 'processed').resolve()
     ckpt_dir = (LOG_DIR / task_name / args['exptid']).resolve()
@@ -54,19 +53,13 @@ def main(args):
     print(f"Task name: {task_name}")
     print("*"*20)
 
-    # print(f"Checkpoint dir: {ckpt_dir}")
-    # task_config = SIM_TASK_CONFIGS[task_name]
-    # dataset_dir = task_config['dataset_dir']
-    # ckpt_dir = task_config['ckpt_dir']
-    # num_episodes = task_config['num_episodes']
-    # episode_len = task_config['episode_len']
     camera_names = ['left', 'right']
 
     # fixed parameters
-    state_dim = 26
-    action_dim = 28
+    state_dim = 13 # TODO: temporarily only use right arm states. May need to extend to 26 (both left and right) 
+    action_dim = 13 # TODO: temporarily only use right arm actions. May need to extend to 26 (both left and right)
     lr_backbone = 1e-5
-    backbone = 'dino_v2'
+    backbone = 'dino_v2' # TODO: change to resnet18 / resnet 50 if needed. This should be put into args.
     if policy_class == 'ACT':
         enc_layers = 4
         dec_layers = 7
@@ -190,48 +183,40 @@ def train_bc(train_dataloader, val_dataloader, config):
     if config['resumeid']:
         exp_dir, exp_name = parse_id((LOG_DIR / config['task_name']).resolve(), config['resumeid'])
         policy, _, _ = load_ckpt(policy, exp_dir, config['resume_ckpt'])
-        # if config['resume_ckpt']:
-        #     ckpt_name = f"policy_epoch_{config['resume_ckpt']}_seed_0.ckpt"
-        # else:
-        #     ckpt_name, _ = find_all_ckpt(exp_dir)#f"policy_last.ckpt"
-        # resume_path = (Path(exp_dir) / ckpt_name).resolve()
-        # print(f"Resuming from {resume_path}")
-        # checkpoint = torch.load(resume_path)
-        # policy.load_state_dict(checkpoint)
 
-    # train_history = []
-    # validation_history = []
     min_val_loss = np.inf
     best_ckpt_info = None
 
     train_dataloader = repeater(train_dataloader)
     for epoch in tqdm(range(num_epochs)):
         print(f'\nEpoch {epoch}')
-        if epoch % 500 == 0:
-        # validation
-            with torch.inference_mode():
-                policy.eval()
-                validation_dicts = []
-                for batch_idx, data in enumerate(val_dataloader):
-                    forward_dict = forward_pass(data, policy)
-                    validation_dicts.append(forward_dict)
-                    if batch_idx > 20:
-                        break
+        
+        # We don't need validation for now
+        # if epoch % 500 == 0:
+        # # validation
+        #     with torch.inference_mode():
+        #         policy.eval()
+        #         validation_dicts = []
+        #         for batch_idx, data in enumerate(val_dataloader):
+        #             forward_dict = forward_pass(data, policy)
+        #             validation_dicts.append(forward_dict)
+        #             if batch_idx > 20:
+        #                 break
 
-                validation_summary = compute_dict_mean(validation_dicts)
+        #         validation_summary = compute_dict_mean(validation_dicts)
                 
-                epoch_val_loss = validation_summary['loss']
-                if epoch_val_loss < min_val_loss:
-                    min_val_loss = epoch_val_loss
-                    best_ckpt_info = (epoch, min_val_loss, deepcopy(policy.state_dict()))
-            for k in list(validation_summary.keys()):
-                validation_summary[f'val/{k}'] = validation_summary.pop(k)            
-            wandb.log(validation_summary, step=epoch)
-            print(f'Val loss:   {epoch_val_loss:.5f}')
-            summary_string = ''
-            for k, v in validation_summary.items():
-                summary_string += f'{k}: {v.item():.3f} '
-            print(summary_string)
+        #         epoch_val_loss = validation_summary['loss']
+        #         if epoch_val_loss < min_val_loss:
+        #             min_val_loss = epoch_val_loss
+        #             best_ckpt_info = (epoch, min_val_loss, deepcopy(policy.state_dict()))
+        #     for k in list(validation_summary.keys()):
+        #         validation_summary[f'val/{k}'] = validation_summary.pop(k)            
+        #     wandb.log(validation_summary, step=epoch)
+        #     print(f'Val loss:   {epoch_val_loss:.5f}')
+        #     summary_string = ''
+        #     for k, v in validation_summary.items():
+        #         summary_string += f'{k}: {v.item():.3f} '
+        #     print(summary_string)
 
         # training
         policy.train()
@@ -256,10 +241,9 @@ def train_bc(train_dataloader, val_dataloader, config):
         print(summary_string)
         wandb.log(epoch_summary, step=epoch)
 
-        if epoch % 1000 == 0 and epoch >= 1000:
+        if epoch % 1000 == 0 and epoch >= 1000: # save ckpt every 1000 epochs TODO: change interval if needed
             ckpt_path = os.path.join(ckpt_dir, f'policy_epoch_{epoch}_seed_{seed}.ckpt')
             torch.save(policy.state_dict(), ckpt_path)
-            # plot_history(train_history, validation_history, epoch, ckpt_dir, seed)
 
     ckpt_path = os.path.join(ckpt_dir, f'policy_last.ckpt')
     torch.save(policy.state_dict(), ckpt_path)
@@ -269,27 +253,7 @@ def train_bc(train_dataloader, val_dataloader, config):
     torch.save(best_state_dict, ckpt_path)
     print(f'Training finished:\nSeed {seed}, val loss {min_val_loss:.6f} at epoch {best_epoch}')
 
-    # save training curves
-    # plot_history(train_history, validation_history, num_epochs, ckpt_dir, seed)
-
     return best_ckpt_info
-
-
-def plot_history(train_history, validation_history, num_epochs, ckpt_dir, seed):
-    # save training curves
-    for key in train_history[0]:
-        plot_path = os.path.join(ckpt_dir, f'train_val_{key}_seed_{seed}.png')
-        plt.figure()
-        train_values = [summary[key].item() for summary in train_history]
-        val_values = [summary[key].item() for summary in validation_history]
-        plt.plot(np.linspace(0, num_epochs-1, len(train_history)), train_values, label='train')
-        plt.plot(np.linspace(0, num_epochs-1, len(validation_history)), val_values, label='validation')
-        # plt.ylim([-0.1, 1])
-        plt.tight_layout()
-        plt.legend()
-        plt.title(key)
-        plt.savefig(plot_path)
-    print(f'Saved plots to {ckpt_dir}')
 
 def load_ckpt(policy, exp_dir, ckpt_name):
     if ckpt_name:
