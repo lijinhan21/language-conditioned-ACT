@@ -106,7 +106,7 @@ class DINOv2BackBone(nn.Module):
     def forward(self, tensor):
         xs = self.body.forward_features(tensor)["x_norm_patchtokens"]
         od = OrderedDict()
-        od["0"] = xs.reshape(xs.shape[0], 22, 16, 384).permute(0, 3, 2, 1)
+        od["0"] = xs.reshape(xs.shape[0], 16, 16, 384).permute(0, 3, 2, 1) # Note: hard-coded for 16x16 patches
         return od
     
 class Joiner(nn.Sequential):

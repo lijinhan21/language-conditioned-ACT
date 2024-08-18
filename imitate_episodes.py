@@ -37,29 +37,26 @@ from pathlib import Path
 def main(args):
     set_seed(1)
     # command line parameters
-    is_eval = args['eval']
     policy_class = args['policy_class']
     onscreen_render = args['onscreen_render']
-    # task_name = args['task_name']
     batch_size_train = args['batch_size']
     batch_size_val = args['batch_size']
     num_epochs = args['num_epochs']
 
     # get task parameters
-    task_dir, task_name = parse_id(RECORD_DIR, args['taskid'])
-    dataset_dir = (Path(task_dir) / 'processed').resolve()
+    task_name = args['task_name']
     ckpt_dir = (LOG_DIR / task_name / args['exptid']).resolve()
     print("*"*20)
     print(f"Task name: {task_name}")
     print("*"*20)
 
-    camera_names = ['left', 'right']
+    camera_names = ['agentview_rgb']
 
     # fixed parameters
-    state_dim = 13 # TODO: temporarily only use right arm states. May need to extend to 26 (both left and right) 
-    action_dim = 13 # TODO: temporarily only use right arm actions. May need to extend to 26 (both left and right)
+    state_dim = args['state_dim'] 
+    action_dim = args['action_dim'] 
     lr_backbone = 1e-5
-    backbone = 'dino_v2' # TODO: change to resnet18 / resnet 50 if needed. This should be put into args.
+    backbone = args['backbone']
     if policy_class == 'ACT':
         enc_layers = 4
         dec_layers = 7
@@ -88,27 +85,24 @@ def main(args):
     config = {
         'num_epochs': num_epochs,
         'ckpt_dir': ckpt_dir,
-        # 'episode_len': episode_len,
         'state_dim': state_dim,
         'action_dim': action_dim,
         'lr': args['lr'],
         'policy_class': policy_class,
         'onscreen_render': onscreen_render,
         'policy_config': policy_config,
-        # 'task_name': task_name,
         'seed': args['seed'],
         'temporal_agg': args['temporal_agg'],
         'camera_names': camera_names,
-        # 'real_robot': not is_sim
         'resumeid': args['resumeid'],
         'resume_ckpt': args['resume_ckpt'],
         'task_name': task_name,
         'exptid': args['exptid'],
     }
     mode = "disabled" if args["no_wandb"] or args["save_jit"] else "online"
-    wandb.init(project="television", name=args['exptid'], group=task_name, entity="cxx", mode=mode, dir="../data/logs")
+    wandb.init(project="OKAMI_act", name=args['exptid'], group=task_name, entity="lijinhan", mode=mode) # TODO: change name
     wandb.config.update(config)
-    train_dataloader, val_dataloader, stats, _ = load_data(dataset_dir, camera_names, batch_size_train, batch_size_val)
+    train_dataloader, val_dataloader, stats, _ = load_data(args["dataset_path"], camera_names, batch_size_train, batch_size_val)
 
     # save dataset stats
     if not os.path.isdir(ckpt_dir):
@@ -149,23 +143,10 @@ def make_optimizer(policy_class, policy):
         raise NotImplementedError
     return optimizer
 
-
-def get_image(ts, camera_names):
-    curr_images = []
-    for cam_name in camera_names:
-        curr_image = rearrange(ts.observation['images'][cam_name], 'h w c -> c h w')
-        curr_images.append(curr_image)
-    curr_image = np.stack(curr_images, axis=0)
-    curr_image = torch.from_numpy(curr_image / 255.0).float().cuda().unsqueeze(0)
-    return curr_image
-
-
 def forward_pass(data, policy):
     image_data, qpos_data, action_data, is_pad = data
     image_data, qpos_data, action_data, is_pad = image_data.cuda(), qpos_data.cuda(), action_data.cuda(), is_pad.cuda()
     return policy(qpos_data, image_data, action_data, is_pad) # TODO remove None
-
-
 
 def train_bc(train_dataloader, val_dataloader, config):
     num_epochs = config['num_epochs']
@@ -190,33 +171,6 @@ def train_bc(train_dataloader, val_dataloader, config):
     train_dataloader = repeater(train_dataloader)
     for epoch in tqdm(range(num_epochs)):
         print(f'\nEpoch {epoch}')
-        
-        # We don't need validation for now
-        # if epoch % 500 == 0:
-        # # validation
-        #     with torch.inference_mode():
-        #         policy.eval()
-        #         validation_dicts = []
-        #         for batch_idx, data in enumerate(val_dataloader):
-        #             forward_dict = forward_pass(data, policy)
-        #             validation_dicts.append(forward_dict)
-        #             if batch_idx > 20:
-        #                 break
-
-        #         validation_summary = compute_dict_mean(validation_dicts)
-                
-        #         epoch_val_loss = validation_summary['loss']
-        #         if epoch_val_loss < min_val_loss:
-        #             min_val_loss = epoch_val_loss
-        #             best_ckpt_info = (epoch, min_val_loss, deepcopy(policy.state_dict()))
-        #     for k in list(validation_summary.keys()):
-        #         validation_summary[f'val/{k}'] = validation_summary.pop(k)            
-        #     wandb.log(validation_summary, step=epoch)
-        #     print(f'Val loss:   {epoch_val_loss:.5f}')
-        #     summary_string = ''
-        #     for k, v in validation_summary.items():
-        #         summary_string += f'{k}: {v.item():.3f} '
-        #     print(summary_string)
 
         # training
         policy.train()
@@ -232,7 +186,6 @@ def train_bc(train_dataloader, val_dataloader, config):
         
         epoch_summary = detach_dict(forward_dict)
 
-        # epoch_summary = compute_dict_mean(train_history[(batch_idx+1)*epoch:(batch_idx+1)*(epoch+1)])
         epoch_train_loss = epoch_summary['loss']
         print(f'Train loss: {epoch_train_loss:.5f}')
         summary_string = ''
@@ -281,7 +234,7 @@ def save_jit(config):
     policy, ckpt_name, epoch = load_ckpt(policy, exp_dir, config['resume_ckpt'])
 
     policy.eval()
-    image_data = torch.rand((1, 2, 3, 480, 640), device='cuda')
+    image_data = torch.rand((1, 2, 3, 480, 640), device='cuda') # TODO: change to actual image size
     qpos_data = torch.rand((1, config['state_dim']), device='cuda')
     input_data = (qpos_data, image_data)
 
@@ -297,13 +250,16 @@ if __name__ == '__main__':
     parser.add_argument('--eval', action='store_true')
     parser.add_argument('--onscreen_render', action='store_true')
     parser.add_argument('--policy_class', action='store', type=str, help='policy_class, capitalize', required=True)
-    # parser.add_argument('--task_name', action='store', type=str, help='task_name', required=True)
     parser.add_argument('--batch_size', action='store', type=int, help='batch_size', required=True)
     parser.add_argument('--seed', action='store', type=int, help='seed', required=True)
     parser.add_argument('--num_epochs', action='store', type=int, help='num_epochs', required=True)
     parser.add_argument('--lr', action='store', type=float, help='lr', required=True)
     parser.add_argument('--qpos_noise_std', action='store', default=0, type=float, help='lr', required=False)
 
+    parser.add_argument('--backbone', action='store', type=str, default='resnet18', help='visual backbone, choose from resnet18, resnet34, dino_v2', required=False)
+    parser.add_argument('--state_dim', action='store', type=int, default=13, help='state_dim', required=False)
+    parser.add_argument('--action_dim', action='store', type=int, default=13, help='action_dim', required=False)
+    
     # for ACT
     parser.add_argument('--kl_weight', action='store', type=int, help='KL Weight', required=False)
     parser.add_argument('--chunk_size', action='store', type=int, help='chunk_size', required=False)
@@ -314,18 +270,16 @@ if __name__ == '__main__':
     parser.add_argument('--no_wandb', action='store_true')
     parser.add_argument('--resumeid', action='store', default="", type=str, help='resume id', required=False)
     parser.add_argument('--resume_ckpt', action='store', default="", type=str, help='resume ckpt', required=False)
-    parser.add_argument('--taskid', action='store', type=str, help='task id', required=True)
+    parser.add_argument('--task-name', action='store', type=str, help='task name', required=True)
     parser.add_argument('--exptid', action='store', type=str, help='experiment id', required=True)
-    parser.add_argument('--source', choices=['self', 'ssd'], default='self')
+    parser.add_argument('--dataset-path', action='store', type=str, help='path_to_hdf5_dataset', required=True)
     args = vars(parser.parse_args())
 
-    if args['source'] == 'self':
-        current_dir = Path(__file__).parent.resolve()
-    else:
-        current_dir = Path("/media/cxx/Extreme Pro/human2robot/data/").resolve()
-    DATA_DIR = (current_dir.parent / 'data/').resolve()
-    RECORD_DIR = (DATA_DIR / 'recordings/').resolve()
-    LOG_DIR = (DATA_DIR / 'logs/').resolve()
-    # print(f"\nDATA dir: {DATA_DIR}")
+    current_dir = Path(__file__).parent.resolve()
+    LOG_DIR = (current_dir / 'logs/').resolve()
+    
+    # make dir
+    os.makedirs(LOG_DIR, exist_ok=True)
+    print(f"LOG dir: {LOG_DIR}\n")
 
     main(args)

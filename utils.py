@@ -4,25 +4,23 @@ import os
 import h5py
 from torch.utils.data import TensorDataset, DataLoader
 import time 
+from einops import rearrange
 import IPython
 e = IPython.embed
 from pathlib import Path
 
 class EpisodicDataset(torch.utils.data.Dataset):
-    def __init__(self, episode_ids, dataset_dir, camera_names, norm_stats, episode_len, history_stack=0):
+    def __init__(self, episode_ids, dataset_path, camera_names, norm_stats, episode_len, history_stack=0):
         super(EpisodicDataset).__init__()
         self.episode_ids = episode_ids
-        self.dataset_dir = dataset_dir
+        self.dataset_path = dataset_path
         self.camera_names = camera_names
         self.norm_stats = norm_stats
         self.is_sim = None
         self.max_pad_len = 200
-        action_str = 'qpos_action'
 
         self.history_stack = history_stack
 
-        self.dataset_paths = []
-        self.roots = []
         self.is_sims = []
         self.original_action_shapes = []
 
@@ -32,27 +30,25 @@ class EpisodicDataset(torch.utils.data.Dataset):
             self.image_dict[cam_name] = []
         self.actions = []
 
-        for i, episode_id in enumerate(self.episode_ids):
-            self.dataset_paths.append(os.path.join(self.dataset_dir, f'processed_episode_{episode_id}.hdf5'))
-            root = h5py.File(self.dataset_paths[i], 'r')
-            self.roots.append(root)
-            self.is_sims.append(root.attrs['sim'])
-            self.original_action_shapes.append(root[action_str].shape)
+        # Read in all the data
+        with h5py.File(self.dataset_path, 'r') as f:
+            root = f['data']
+            for i, episode_id in enumerate(self.episode_ids):
+                self.is_sims.append(None)
+                self.original_action_shapes.append(root[f'demo_{episode_id}']['actions'][()].shape)
 
-            self.states.append(np.array(root['observation.state']))
-            for cam_name in self.camera_names:
-                self.image_dict[cam_name].append(root[f'observation.image.{cam_name}'])
-            self.actions.append(np.array(root[action_str]))
+                self.states.append(np.array(root[f'demo_{episode_id}']['obs']['joint_states'][()]))
+                for cam_name in self.camera_names:
+                    imgs = root[f'demo_{episode_id}']['obs'][cam_name][()]
+                    # rearrange the image data to be in the form of (time, C, H, W)
+                    imgs = rearrange(imgs, 't h w c -> t c h w')
+                    self.image_dict[cam_name].append(imgs)
+                self.actions.append(np.array(root[f'demo_{episode_id}']['actions'][()]))
 
-        self.is_sim = self.is_sims[0]
+        self.is_sim = None # TODO: check if this should be False or None
 
         self.episode_len = episode_len
         self.cumulative_len = np.cumsum(self.episode_len)
-
-        # self.__getitem__(0) # initialize self.is_sim
-
-    # def __len__(self):
-    #     return len(self.episode_ids)
 
     def _locate_transition(self, index):
         assert index < self.cumulative_len[-1]
@@ -75,7 +71,6 @@ class EpisodicDataset(torch.utils.data.Dataset):
 
         # get observation at start_ts only
         qpos = self.states[index][start_ts]
-        # qvel = root['/observations/qvel'][start_ts]
 
         if self.history_stack > 0:
             last_indices = np.maximum(0, np.arange(start_ts-self.history_stack, start_ts)).astype(int)
@@ -87,7 +82,8 @@ class EpisodicDataset(torch.utils.data.Dataset):
         # get all actions after and including start_ts
         all_time_action = self.actions[index][:]
 
-        all_time_action_padded = np.zeros((self.max_pad_len+original_action_shape[0], original_action_shape[1]), dtype=np.float32)
+        # pad the last action for max_pad_len times
+        all_time_action_padded = np.zeros((self.max_pad_len+original_action_shape[0], original_action_shape[1]), dtype=np.float32) 
         all_time_action_padded[:episode_len] = all_time_action
         all_time_action_padded[episode_len:] = all_time_action[-1]
         
@@ -119,45 +115,55 @@ class EpisodicDataset(torch.utils.data.Dataset):
             last_action_data = (last_action_data - self.norm_stats['action_mean']) / self.norm_stats['action_std']
             qpos_data = torch.cat((qpos_data, last_action_data.flatten()))
         # print(f"qpos_data: {qpos_data.shape}, action_data: {action_data.shape}, image_data: {image_data.shape}, is_pad: {is_pad.shape}")
+        
         return image_data, qpos_data, action_data, is_pad
 
 
-def get_norm_stats(dataset_dir, num_episodes):
-    action_str = 'qpos_action'
+def get_norm_stats(dataset_path, num_episodes):
+    
     all_qpos_data = []
     all_action_data = []
     all_episode_len = []
-    for episode_idx in range(num_episodes):
-        dataset_path = os.path.join(dataset_dir, f'processed_episode_{episode_idx}.hdf5')
-        with h5py.File(dataset_path, 'r') as root:
-            qpos = root['observation.state'][()]
-            action = root[action_str][()]
-        all_qpos_data.append(torch.from_numpy(qpos))
-        all_action_data.append(torch.from_numpy(action))
-        all_episode_len.append(len(qpos))
+    
+    with h5py.File(dataset_path, 'r') as f:
+        root = f['data']
+        for episode_idx in range(num_episodes):
+            qpos = root[f'demo_{episode_idx}']['obs']['joint_states'][()]
+            action = root[f'demo_{episode_idx}']['actions'][()]
+            
+            all_qpos_data.append(torch.from_numpy(qpos))
+            all_action_data.append(torch.from_numpy(action))
+            all_episode_len.append(len(qpos))
+    
     all_qpos_data = torch.cat(all_qpos_data)
     all_action_data = torch.cat(all_action_data)
     all_action_data = all_action_data
 
     # normalize action data
-    action_mean = all_action_data.mean(dim=0, keepdim=True)  # (episode, timstep, action_dim)
-    action_std = all_action_data.std(dim=0, keepdim=True)
+    action_mean = all_action_data.mean(dim=0, keepdim=True).float()  # (episode, timstep, action_dim)
+    action_std = all_action_data.std(dim=0, keepdim=True).float()
     action_std = torch.clip(action_std, 1e-2, np.inf) # clipping
 
     # normalize qpos data
-    qpos_mean = all_qpos_data.mean(dim=0, keepdim=True)
-    qpos_std = all_qpos_data.std(dim=0, keepdim=True)
+    qpos_mean = all_qpos_data.mean(dim=0, keepdim=True).float()
+    qpos_std = all_qpos_data.std(dim=0, keepdim=True).float()
     qpos_std = torch.clip(qpos_std, 1e-2, np.inf) # clipping
 
     stats = {"action_mean": action_mean.numpy().squeeze(), "action_std": action_std.numpy().squeeze(),
              "qpos_mean": qpos_mean.numpy().squeeze(), "qpos_std": qpos_std.numpy().squeeze(),
              "example_qpos": qpos}
+    print("stats: ", stats)
 
     return stats, all_episode_len
 
-def find_all_processed_episodes(path):
-    episodes = [f for f in os.listdir(path)]
-    return episodes
+def find_episodes_num(dataset_path):
+    """
+    Output number of episodes in the dataset.
+    """
+    with h5py.File(dataset_path, 'r') as f:
+        root = f['data']
+        episodes_num = root.attrs['num_demos'] 
+    return episodes_num
 
 def BatchSampler(batch_size, episode_len_l, sample_weights=None):
     sample_probs = np.array(sample_weights) / np.sum(sample_weights) if sample_weights is not None else None
@@ -170,33 +176,27 @@ def BatchSampler(batch_size, episode_len_l, sample_weights=None):
             batch.append(step_idx)
         yield batch
 
-def load_data(dataset_dir, camera_names, batch_size_train, batch_size_val):
-    print(f'\nData from: {dataset_dir}\n')
+def load_data(dataset_path, camera_names, batch_size_train, batch_size_val=None):
+    print(f'\nData from: {dataset_path}\n')
 
-    all_eps = find_all_processed_episodes(dataset_dir)
-    num_episodes = len(all_eps)
+    num_episodes = find_episodes_num(dataset_path)
     
-    # obtain train test split
-    train_ratio = 0.99
+    # No validation set
     shuffled_indices = np.random.permutation(num_episodes)
-    train_indices = shuffled_indices[:int(train_ratio * num_episodes)]
-    val_indices = shuffled_indices[int(train_ratio * num_episodes):]
-    print(f"Train episodes: {len(train_indices)}, Val episodes: {len(val_indices)}")
+    train_indices = shuffled_indices[:]
+    print(f"Train episodes: {len(train_indices)}")
+    
     # obtain normalization stats for qpos and action
-    norm_stats, all_episode_len = get_norm_stats(dataset_dir, num_episodes)
+    norm_stats, all_episode_len = get_norm_stats(dataset_path, num_episodes)
 
     train_episode_len_l = [all_episode_len[i] for i in train_indices]
-    val_episode_len_l = [all_episode_len[i] for i in val_indices]
     batch_sampler_train = BatchSampler(batch_size_train, train_episode_len_l)
-    batch_sampler_val = BatchSampler(batch_size_val, val_episode_len_l, None)
 
     # construct dataset and dataloader
-    train_dataset = EpisodicDataset(train_indices, dataset_dir, camera_names, norm_stats, train_episode_len_l)
-    val_dataset = EpisodicDataset(val_indices, dataset_dir, camera_names, norm_stats, val_episode_len_l)
-    train_dataloader = DataLoader(train_dataset, batch_sampler=batch_sampler_train, pin_memory=True, num_workers=24, prefetch_factor=2)
-    val_dataloader = DataLoader(val_dataset, batch_sampler=batch_sampler_val, pin_memory=True, num_workers=16, prefetch_factor=2)
+    train_dataset = EpisodicDataset(train_indices, dataset_path, camera_names, norm_stats, train_episode_len_l)
+    train_dataloader = DataLoader(train_dataset, batch_sampler=batch_sampler_train, pin_memory=True, num_workers=16, prefetch_factor=2)
 
-    return train_dataloader, val_dataloader, norm_stats, train_dataset.is_sim
+    return train_dataloader, None, norm_stats, train_dataset.is_sim
 
 ### helper functions
 
@@ -248,3 +248,6 @@ def find_all_ckpt(base_dir, prefix="policy_epoch_"):
     ckpt_files = sorted(ckpt_files, key=lambda x: int(x.split(prefix)[-1].split('_')[0]), reverse=True)
     epoch = int(ckpt_files[0].split(prefix)[-1].split('_')[0])
     return ckpt_files[0], epoch
+
+if __name__ == '__main__':
+    load_data("/home/yifengz/dataset_absjoint_salt_smallrange_100.hdf5", ["agentview_rgb"], 64)

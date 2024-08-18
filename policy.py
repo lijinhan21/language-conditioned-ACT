@@ -1,6 +1,7 @@
 import torch.nn as nn
 from torch.nn import functional as F
 from torchvision.transforms import v2
+import torchvision.transforms as transforms
 import torch
 
 from detr.main import build_ACT_model_and_optimizer, build_CNNMLP_model_and_optimizer
@@ -19,38 +20,11 @@ class ACTPolicy(nn.Module):
 
     def __call__(self, qpos, image, actions=None, is_pad=None):
         env_state = None
-        # normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
-        #                                  std=[0.229, 0.224, 0.225])
-        patch_h = 16
-        patch_w = 22
-        if actions is not None: # training time
-            # transform = v2.Compose([
-            #     v2.ColorJitter(brightness=0.5, contrast=0.5, saturation=0.5, hue=0.5),
-            #     v2.RandomPerspective(distortion_scale=0.5),
-            #     v2.RandomAffine(degrees=10, translate=(0.1,0.1), scale=(0.9,1.1)),
-            #     v2.GaussianBlur(kernel_size=(9,9), sigma=(0.1,2.0)),
-            #     v2.Normalize(
-            #         mean=[0.485, 0.456, 0.406],
-            #         std=[0.229, 0.224, 0.225])
-            # ])
-            transform = v2.Compose([
-                v2.ColorJitter(brightness=0.5, contrast=0.5, saturation=0.5, hue=0.5),
-                v2.RandomPerspective(distortion_scale=0.5),
-                v2.RandomAffine(degrees=10, translate=(0.1,0.1), scale=(0.9,1.1)),
-                v2.GaussianBlur(kernel_size=(9,9), sigma=(0.1,2.0)),
-                v2.Resize((patch_h * 14, patch_w * 14)),
-                # v2.CenterCrop((patch_h * 14, patch_w * 14)),
-                v2.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
-            ])
-            qpos += (self.qpos_noise_std**0.5)*torch.randn_like(qpos)
-        else: # inference time
-            transform = v2.Compose([
-                v2.Resize((patch_h * 14, patch_w * 14)),
-                # v2.CenterCrop((patch_h * 14, patch_w * 14)),
-                v2.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))
-            ])
-            
-        image = transform(image)
+        
+        normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                         std=[0.229, 0.224, 0.225])
+        image = normalize(image)
+        
         if actions is not None: # training time
             actions = actions[:, :self.model.num_queries]
             is_pad = is_pad[:, :self.model.num_queries]
