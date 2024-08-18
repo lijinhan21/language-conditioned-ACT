@@ -162,8 +162,12 @@ if __name__ == '__main__':
                 if history_stack > 0:
                     last_action_queue.append(act)
                 act = act * norm_stats["action_std"] + norm_stats["action_mean"]
-                done = player.step(act, agentview_rgb)
+                reward, done = player.step(act, agentview_rgb)
                 if done:
+                    if reward > 0:
+                        print("Success!")
+                    else:
+                        print("Failed!")
                     break
             
             video_out.append(player.get_episode_recording())
