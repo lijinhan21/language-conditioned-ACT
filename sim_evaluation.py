@@ -135,7 +135,8 @@ if __name__ == '__main__':
         output = None
         act_index = 0
         
-        num_episodes = 4
+        num_episodes = 16
+        success_count = 0
         video_out = []
         for episode_idx in range(num_episodes):
             print("Episode", episode_idx)
@@ -166,6 +167,7 @@ if __name__ == '__main__':
                 if done:
                     if reward > 0:
                         print("Success!")
+                        success_count += 1
                     else:
                         print("Failed!")
                     break
@@ -173,8 +175,9 @@ if __name__ == '__main__':
             video_out.append(player.get_episode_recording())
             player.reset()
         
-        player.render_multiple_episode_video(video_out, current_dir, f"{config['task_name']}_{config['exptid']}_eval.mp4")
-            
+        print("Success rate:", success_count / num_episodes)
+        player.render_multiple_episode_video(video_out, current_dir, f"{config['task_name']}_{config['exptid']}_eval_{config['resume_ckpt']}.mp4")
+        
     except KeyboardInterrupt:
         player.end()
         exit()

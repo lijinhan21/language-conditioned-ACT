@@ -131,7 +131,7 @@ class Player:
             # images = [torch.tensor(episode[i]) for episode in video_out]
             for j in range(len(images)):
                 images[j] = rearrange(images[j], 'h w c -> c h w')
-            grid_image = make_grid(images, nrow=2).numpy()
+            grid_image = make_grid(images, nrow=4).numpy()
             video_writer.append_image(grid_image)
         video_writer.save()
 
