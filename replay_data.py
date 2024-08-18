@@ -98,6 +98,21 @@ class Player:
         frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
         self.episode_recording.append(frame)
         
+        if done:
+            print("Episode done!")
+            if reward > 0.5:
+                green_filter = np.zeros_like(frame)
+                green_filter[:, :, 1] = 255
+                alpha = 0.2
+                success_img = cv2.addWeighted(frame, 1 - alpha, green_filter, alpha, 0)
+                self.episode_recording.append(success_img)
+            else:
+                red_filter = np.zeros_like(frame)
+                red_filter[:, :, 2] = 255
+                alpha = 0.2
+                fail_img = cv2.addWeighted(frame, 1 - alpha, red_filter, alpha, 0)
+                self.episode_recording.append(fail_img)
+        
         time.sleep(1/20)
         
         return reward, done
