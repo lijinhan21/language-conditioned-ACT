@@ -51,13 +51,13 @@ After training, you can save jit for the desired checkpoint:
 ```
     python replay_policy.py --policy_class ACT --kl_weight 10 --chunk_size 60 --hidden_dim 512 --batch_size 45 --dim_feedforward 3200 --num_epochs 50000 --lr 5e-5 --seed 0 --task-name test --exptid 01-test --dataset-path /home/yifengz/dataset_absjoint_salt_smallrange_100.hdf5 --resume_ckpt 200
 ```
-The results will be saved in `{task-name}_{exptid}_replay.py`.
+The results will be saved in `{task-name}_{exptid}_replay.mp4`.
 
 If you are using simulation data, you can also evaluate the policy in simulation:
 ```
     python sim_evaluation.py --policy_class ACT --kl_weight 10 --chunk_size 60 --hidden_dim 512 --batch_size 45 --dim_feedforward 3200 --num_epochs 50000 --lr 5e-5 --seed 0 --task-name test --exptid 01-test --dataset-path /home/yifengz/dataset_absjoint_salt_smallrange_100.hdf5 --resume_ckpt 200
 ```
-The results will be saved in `{task-name}_{exptid}_eval.py`.
+The results will be saved in `{task-name}_{exptid}_eval.mp4`.
 
 ---
 

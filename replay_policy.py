@@ -50,7 +50,8 @@ def normalize_input(state, agentview_rgb, norm_stats, last_action_data=None):
     image_data = torch.from_numpy(np.stack([agentview_rgb], axis=0)) / 255.0
     qpos_data = (torch.from_numpy(state) - norm_stats["qpos_mean"]) / norm_stats["qpos_std"]
     image_data = image_data.view((1, 1, 3, 224, 224)).float().to(device='cuda')
-    qpos_data = qpos_data.view((1, 13)).float().to(device='cuda') # TODO: change 13 to state_dim
+    state_dim = len(norm_stats["qpos_mean"])
+    qpos_data = qpos_data.view((1, state_dim)).float().to(device='cuda')
 
     if last_action_data is not None:
         last_action_data = torch.from_numpy(last_action_data).to(device='cuda').view((1, -1)).to(torch.float)
@@ -118,6 +119,7 @@ if __name__ == '__main__':
         states = np.array(root['obs']['joint_states'][()])
     
     timestamps = states.shape[0]
+    single_arm = (len(actions[0]) == 13)
 
     norm_stats = get_norm_stats(norm_stat_path)
     policy = load_policy(config)
@@ -135,7 +137,7 @@ if __name__ == '__main__':
     
     # ---
     
-    player = Player()
+    player = Player(single_arm)
 
     if temporal_agg:
         all_time_actions = np.zeros([timestamps, timestamps+chunk_size, action_dim])

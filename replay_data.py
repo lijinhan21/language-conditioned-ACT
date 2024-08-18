@@ -17,13 +17,16 @@ import robosuite as suite
 from robosuite import load_controller_config
 from robosuite.utils.okami_utils import joint_pos_controller, urdf_to_robosuite_cmds, obs_to_urdf
 
-from utils import joint_state_13_to_56, name_to_urdf_idx, name_to_limits, KaedeVideoWriter, make_grid
+from utils import joint_state_13_to_56, joint_state_26_to_56, name_to_urdf_idx, name_to_limits, KaedeVideoWriter, make_grid
 
 from pathlib import Path
 current_dir = Path(__file__).parent.resolve()
 
 class Player:
-    def __init__(self):
+    def __init__(self, single_arm=True):
+        
+        self.single_arm = single_arm
+        
         # Get controller config
         controller_config = load_controller_config(default_controller="JOINT_POSITION")
         controller_config["kp"] = 500
@@ -56,7 +59,12 @@ class Player:
     def get_state_and_images(self):
         joint_states_urdf = obs_to_urdf(self.obs) # shape (56,)
         right_idx = [25, 26, 27, 28, 29, 30, 31, 32, 33, 36, 38, 40, 42]
-        joint_states =  joint_states_urdf[right_idx] # shape (13,)
+        left_idx = [6, 7, 8, 9, 10, 11, 12, 13, 14, 17, 19, 21, 23]
+        if self.single_arm:
+            joint_states =  joint_states_urdf[right_idx] # shape (13,)
+        else:
+            all_arms_idx = left_idx + right_idx
+            joint_states = joint_states_urdf[all_arms_idx] # shape (26,)
         
         rgb_img = self.obs["robot0_robotview_image"]
         rgb_img = cv2.flip(rgb_img, 0)
@@ -68,7 +76,13 @@ class Player:
     
     def step(self, action, agentview_rgb):
         
-        urdf_q = joint_state_13_to_56(action)
+        if self.single_arm:
+            assert len(action) == 13
+            urdf_q = joint_state_13_to_56(action)
+        else:
+            assert len(action) == 26
+            urdf_q = joint_state_26_to_56(action)
+        
         for j, (name, idx) in enumerate(name_to_urdf_idx.items()):
             limits = name_to_limits[name]
             # clip between limits
@@ -146,8 +160,9 @@ if __name__ == '__main__':
         states = np.array(root['obs']['joint_states'][()])
     
     timestamps = states.shape[0]
+    single_arm = (len(actions[0]) == 13)
     
-    player = Player()
+    player = Player(single_arm)
     
     try:
         for t in tqdm(range(timestamps)):

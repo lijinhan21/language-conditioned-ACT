@@ -289,6 +289,27 @@ def joint_state_13_to_56(joint_states):
     q[32:44] = extend_urdf_finger_cmds(joint_states[7:])
     return q
 
+def joint_state_26_to_56(joint_states):
+    """
+    Convert 26-dim joint states to 56-dim joint states in urdf.
+    """
+    q = np.zeros(56)
+    
+    head_init = np.array([0.0, 0.0, 0.34])
+    torso_init = np.array([0.0, 0.22, 0.0])
+    q[:3] = torso_init
+    q[3:6] = head_init
+    
+    # left arm and hand
+    q[6:13] = joint_states[:7]
+    q[13:25] = extend_urdf_finger_cmds(joint_states[7:13])
+    
+    # right arm and hand
+    q[25:32] = joint_states[13:20]
+    q[32:44] = extend_urdf_finger_cmds(joint_states[20:26])
+    
+    return q
+
 def make_grid(images, nrow=8, padding=2, normalize=False, pad_value=0):
     """Make a grid of images. Make sure images is a 4D tensor in the shape of (B x C x H x W)) or a list of torch tensors."""
     grid_image = torchvision.utils.make_grid(images, nrow=nrow, padding=padding, normalize=normalize, pad_value=pad_value).permute(1, 2, 0)
