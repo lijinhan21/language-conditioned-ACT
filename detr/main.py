@@ -74,6 +74,7 @@ def get_args_parser():
     parser.add_argument('--task-name', action='store', type=str, help='task name', required=True)
     parser.add_argument('--exptid', action='store', type=str, help='experiment id', required=True)
     parser.add_argument('--dataset-path', action='store', type=str, help='path_to_hdf5_dataset', required=True)
+    parser.add_argument('--saving-interval', action='store', type=int, default=5000, help='saving interval', required=False)
 
 
     return parser

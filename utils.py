@@ -9,6 +9,9 @@ import IPython
 e = IPython.embed
 from pathlib import Path
 
+import imageio
+import torchvision
+
 class EpisodicDataset(torch.utils.data.Dataset):
     def __init__(self, episode_ids, dataset_path, camera_names, norm_stats, episode_len, history_stack=0):
         super(EpisodicDataset).__init__()
@@ -248,6 +251,231 @@ def find_all_ckpt(base_dir, prefix="policy_epoch_"):
     ckpt_files = sorted(ckpt_files, key=lambda x: int(x.split(prefix)[-1].split('_')[0]), reverse=True)
     epoch = int(ckpt_files[0].split(prefix)[-1].split('_')[0])
     return ckpt_files[0], epoch
+
+def extend_urdf_finger_cmds(finger_cmds):
+    """
+    Convert 6-dim finger cmds to 12-dim finger cmds in urdf.
+    """
+    mapping_base = [0, 1, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5]
+    mapping_scale = [1, 1, 1, 1.13, 1, 1.08, 1, 1.15, 1, 1.13, 1, 1.13]
+
+    actions = finger_cmds[mapping_base] * mapping_scale
+
+    return np.array(actions)
+
+def extend_delta_from_13_to_56(right_arm_q):
+    # right_arm_q: shape (13,)
+    # return: shape (56,)
+    
+    q = np.zeros(56)
+    
+    q[25:32] = right_arm_q[:7]
+    q[32:44] = extend_urdf_finger_cmds(right_arm_q[7:])
+    
+    return q
+
+def joint_state_13_to_56(joint_states):
+    """
+    Convert 13-dim joint states to 56-dim joint states in urdf.
+    """
+    q = np.zeros(56)
+    
+    head_init = np.array([0.0, 0.0, 0.34])
+    torso_init = np.array([0.0, 0.22, 0.0])
+    q[:3] = torso_init
+    q[3:6] = head_init
+    
+    q[25:32] = joint_states[:7]
+    q[32:44] = extend_urdf_finger_cmds(joint_states[7:])
+    return q
+
+def make_grid(images, nrow=8, padding=2, normalize=False, pad_value=0):
+    """Make a grid of images. Make sure images is a 4D tensor in the shape of (B x C x H x W)) or a list of torch tensors."""
+    grid_image = torchvision.utils.make_grid(images, nrow=nrow, padding=padding, normalize=normalize, pad_value=pad_value).permute(1, 2, 0)
+    return grid_image
+
+class KaedeVideoWriter():
+    def __init__(self, video_path, save_video=False, video_name=None, fps=30, single_video=True):
+        self.video_path = video_path
+        self.save_video = save_video
+        self.fps = fps
+        self.image_buffer = {}
+        self.single_video = single_video
+        self.last_images = {}
+        if video_name is None:
+            self.video_name = "video.mp4"
+        else:
+            self.video_name = video_name
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.save(self.video_name)
+
+    def reset(self):
+        if self.save_video:
+            self.last_images = {}
+
+    def append_image(self, image, idx=0):
+        if self.save_video:
+            if idx not in self.image_buffer:
+                self.image_buffer[idx] = []
+            if idx not in self.last_images:
+                self.last_images[idx] = None
+            self.image_buffer[idx].append(image[::-1])
+
+    def append_vector_obs(self, images):
+        if self.save_video:
+            for i in range(len(images)):
+                self.append_image(images[i], i)
+
+    def save(self, video_name=None, flip=False, bgr=False):
+        if video_name is None:
+            video_name = self.video_name
+        img_convention = 1
+        color_convention = 1
+        if flip:
+            img_convention = -1
+        if bgr:
+            color_convention = -1
+        if self.save_video:
+            os.makedirs(self.video_path, exist_ok=True)
+            if self.single_video:
+                video_name = os.path.join(self.video_path, video_name)
+                video_writer = imageio.get_writer(video_name, fps=self.fps)
+                for idx in self.image_buffer.keys():
+                    for im in self.image_buffer[idx]:
+                        video_writer.append_data(im[::img_convention, :, ::color_convention])
+                video_writer.close()
+            else:
+                for idx in self.image_buffer.keys():
+                    video_name = os.path.join(self.video_path, f"{idx}.mp4")
+                    video_writer = imageio.get_writer(video_name, fps=self.fps)
+                    for im in self.image_buffer[idx]:
+                        video_writer.append_data(im[::img_convention, :, ::color_convention])
+                    video_writer.close()
+            print(f"Saved videos to {video_name}.")
+
+
+name_to_urdf_idx = {
+    "joint_waist_yaw": 0,
+    "joint_waist_pitch": 1,
+    "joint_waist_roll": 2,
+    "joint_head_yaw": 3,
+    "joint_head_roll": 4,
+    "joint_head_pitch": 5,
+    "l_shoulder_pitch": 6,
+    "l_shoulder_roll": 7,
+    "l_shoulder_yaw": 8,
+    "l_elbow_pitch": 9,
+    "l_wrist_yaw": 10,
+    "l_wrist_roll": 11,
+    "l_wrist_pitch": 12,
+    "joint_LFinger0": 13,
+    "joint_LFinger1": 14,
+    "joint_LFinger2": 15,
+    "joint_LFinger3": 16,
+    "joint_LFinger11": 17,
+    "joint_LFinger12": 18,
+    "joint_LFinger14": 19,
+    "joint_LFinger15": 20,
+    "joint_LFinger5": 21,
+    "joint_LFinger6": 22,
+    "joint_LFinger8": 23,
+    "joint_LFinger9": 24,
+    "r_shoulder_pitch": 25,
+    "r_shoulder_roll": 26,
+    "r_shoulder_yaw": 27,
+    "r_elbow_pitch": 28,
+    "r_wrist_yaw": 29,
+    "r_wrist_roll": 30,
+    "r_wrist_pitch": 31,
+    "joint_RFinger0": 32,
+    "joint_RFinger1": 33,
+    "joint_RFinger2": 34,
+    "joint_RFinger3": 35,
+    "joint_RFinger11": 36,
+    "joint_RFinger12": 37,
+    "joint_RFinger14": 38,
+    "joint_RFinger15": 39,
+    "joint_RFinger5": 40,
+    "joint_RFinger6": 41,
+    "joint_RFinger8": 42,
+    "joint_RFinger9": 43,
+    "l_hip_roll": 44,
+    "l_hip_yaw": 45,
+    "l_hip_pitch": 46,
+    "l_knee_pitch": 47,
+    "l_ankle_pitch": 48,
+    "l_ankle_roll": 49,
+    "r_hip_roll": 50,
+    "r_hip_yaw": 51,
+    "r_hip_pitch": 52,
+    "r_knee_pitch": 53,
+    "r_ankle_pitch": 54,
+    "r_ankle_roll": 55,
+}
+
+name_to_limits = {
+    'l_hip_roll': (-0.08726646259971647, 0.7853981633974483), 
+    'l_hip_yaw': (-0.6981317007977318, 0.6981317007977318), 
+    'l_hip_pitch': (-1.7453292519943295, 0.6981317007977318), 
+    'l_knee_pitch': (-0.08726646259971647, 1.9198621771937625), 
+    'l_ankle_pitch': (-1.0471975511965976, 0.5235987755982988), 
+    'l_ankle_roll': (-0.4363323129985824, 0.4363323129985824), 
+    'r_hip_roll': (-0.7853981633974483, 0.08726646259971647), 
+    'r_hip_yaw': (-0.6981317007977318, 0.6981317007977318), 
+    'r_hip_pitch': (-1.7453292519943295, 0.6981317007977318), 
+    'r_knee_pitch': (-0.08726646259971647, 1.9198621771937625), 
+    'r_ankle_pitch': (-1.0471975511965976, 0.5235987755982988), 
+    'r_ankle_roll': (-0.4363323129985824, 0.4363323129985824), 
+    'joint_waist_yaw': (-1.0471975511965976, 1.0471975511965976), 
+    'joint_waist_pitch': (-0.5235987755982988, 1.2217304763960306), 
+    'joint_waist_roll': (-0.6981317007977318, 0.6981317007977318), 
+    'joint_head_yaw': (-2.705260340591211, 2.705260340591211), 
+    'joint_head_roll': (-0.3490658503988659, 0.3490658503988659), 
+    'joint_head_pitch': (-0.5235987755982988, 0.3490658503988659), 
+    'l_shoulder_pitch': (-1.0471975511965976, 2.6179938779914944), 
+    'l_shoulder_roll': (-2.4085543677521746, 0.20943951023931956), 
+    'l_shoulder_yaw': (-1.5707963267948966, 1.5707963267948966), 
+    'l_elbow_pitch': (0.0, 1.5707963267948966), 
+    'l_wrist_yaw': (-1.5707963267948966, 1.5707963267948966), 
+    'l_wrist_roll': (-0.3665191429188092, 0.3665191429188092), 
+    'l_wrist_pitch': (-0.3665191429188092, 0.3665191429188092), 
+    'joint_LFinger0': (0.0, 1.2915436464758039), 
+    'joint_LFinger1': (0.0, 0.6806784082777885), 
+    'joint_LFinger2': (0.0, 0.767944870877505), 
+    'joint_LFinger3': (0.0, 0.5934119456780721), 
+    'joint_LFinger5': (0.0, 1.6231562043547265), 
+    'joint_LFinger6': (0.0, 1.8151424220741028), 
+    'joint_LFinger8': (0.0, 1.6231562043547265), 
+    'joint_LFinger9': (0.0, 1.7453292519943295), 
+    'joint_LFinger11': (0.0, 1.6231562043547265), 
+    'joint_LFinger12': (0.0, 1.7453292519943295), 
+    'joint_LFinger14': (0.0, 1.6231562043547265), 
+    'joint_LFinger15': (0.0, 1.8675022996339325), 
+    'r_shoulder_pitch': (-2.6179938779914944, 1.0471975511965976), 
+    'r_shoulder_roll': (-0.20943951023931956, 2.4085543677521746), 
+    'r_shoulder_yaw': (-1.5707963267948966, 1.5707963267948966), 
+    'r_elbow_pitch': (-1.5707963267948966, 0.0), 
+    'r_wrist_yaw': (-1.5707963267948966, 1.5707963267948966), 
+    'r_wrist_roll': (-0.3665191429188092, 0.3665191429188092), 
+    'r_wrist_pitch': (-0.3665191429188092, 0.3665191429188092), 
+    'joint_RFinger0': (0.0, 1.2915436464758039), 
+    'joint_RFinger1': (0.0, 0.6806784082777885), 
+    'joint_RFinger2': (0.0, 0.767944870877505), 
+    'joint_RFinger3': (0.0, 0.5934119456780721), 
+    'joint_RFinger5': (0.0, 1.6231562043547265), 
+    'joint_RFinger6': (0.0, 1.8151424220741028), 
+    'joint_RFinger8': (0.0, 1.6231562043547265), 
+    'joint_RFinger9': (0.0, 1.7453292519943295), 
+    'joint_RFinger11': (0.0, 1.6231562043547265), 
+    'joint_RFinger12': (0.0, 1.7453292519943295), 
+    'joint_RFinger14': (0.0, 1.6231562043547265), 
+    'joint_RFinger15': (0.0, 1.8675022996339325)
+}
+
 
 if __name__ == '__main__':
     load_data("/home/yifengz/dataset_absjoint_salt_smallrange_100.hdf5", ["agentview_rgb"], 64)

@@ -32,15 +32,13 @@ def repeater(data_loader):
         epoch += 1
 
 from pathlib import Path
+current_dir = Path(__file__).parent.resolve()
+LOG_DIR = (current_dir / 'logs/').resolve()
 
-
-def main(args):
-    set_seed(1)
+def make_config(args):
     # command line parameters
     policy_class = args['policy_class']
     onscreen_render = args['onscreen_render']
-    batch_size_train = args['batch_size']
-    batch_size_val = args['batch_size']
     num_epochs = args['num_epochs']
 
     # get task parameters
@@ -98,9 +96,24 @@ def main(args):
         'resume_ckpt': args['resume_ckpt'],
         'task_name': task_name,
         'exptid': args['exptid'],
+        'saving_interval': args['saving_interval'],
     }
+    
+    return config
+
+def main(args):
+    set_seed(1)
+    
+    config = make_config(args)
+    
+    batch_size_train = args['batch_size']
+    batch_size_val = args['batch_size']
+    task_name = config['task_name']
+    camera_names = config['camera_names']
+    ckpt_dir = config['ckpt_dir']
+    
     mode = "disabled" if args["no_wandb"] or args["save_jit"] else "online"
-    wandb.init(project="OKAMI_act", name=args['exptid'], group=task_name, entity="lijinhan", mode=mode) # TODO: change name
+    wandb.init(project="OKAMI_act", name=args['exptid'], group=task_name, entity="lijinhan", mode=mode)
     wandb.config.update(config)
     train_dataloader, val_dataloader, stats, _ = load_data(args["dataset_path"], camera_names, batch_size_train, batch_size_val)
 
@@ -146,7 +159,7 @@ def make_optimizer(policy_class, policy):
 def forward_pass(data, policy):
     image_data, qpos_data, action_data, is_pad = data
     image_data, qpos_data, action_data, is_pad = image_data.cuda(), qpos_data.cuda(), action_data.cuda(), is_pad.cuda()
-    return policy(qpos_data, image_data, action_data, is_pad) # TODO remove None
+    return policy(qpos_data, image_data, action_data, is_pad) 
 
 def train_bc(train_dataloader, val_dataloader, config):
     num_epochs = config['num_epochs']
@@ -154,6 +167,7 @@ def train_bc(train_dataloader, val_dataloader, config):
     seed = config['seed']
     policy_class = config['policy_class']
     policy_config = config['policy_config']
+    saving_interval = config['saving_interval']
 
     set_seed(seed)
 
@@ -194,7 +208,7 @@ def train_bc(train_dataloader, val_dataloader, config):
         print(summary_string)
         wandb.log(epoch_summary, step=epoch)
 
-        if epoch % 1000 == 0 and epoch >= 1000: # save ckpt every 1000 epochs TODO: change interval if needed
+        if epoch % saving_interval == 0 and epoch >= saving_interval: # save ckpt every {saving_interval} epochs
             ckpt_path = os.path.join(ckpt_dir, f'policy_epoch_{epoch}_seed_{seed}.ckpt')
             torch.save(policy.state_dict(), ckpt_path)
 
@@ -208,13 +222,14 @@ def train_bc(train_dataloader, val_dataloader, config):
 
     return best_ckpt_info
 
-def load_ckpt(policy, exp_dir, ckpt_name):
+def load_ckpt(policy, ckpt_dir, ckpt_name):
     if ckpt_name:
         epoch = ckpt_name
-        ckpt_name = f"policy_epoch_{ckpt_name}_seed_0.ckpt"
+        ckpt_name = f"policy_epoch_{epoch}_seed_0.ckpt"
     else:
-        ckpt_name, epoch = find_all_ckpt(exp_dir)#f"policy_last.ckpt"
-    resume_path = (Path(exp_dir) / ckpt_name).resolve()
+        raise ValueError("Please specify the checkpoint name (epoch number).")
+    
+    resume_path = (Path(ckpt_dir) / ckpt_name).resolve()
     print("*"*20)
     print(f"Resuming from {resume_path}")
     print("*"*20)
@@ -222,24 +237,22 @@ def load_ckpt(policy, exp_dir, ckpt_name):
     return policy, ckpt_name, epoch
 
 def save_jit(config):
-    # ckpt_dir = config['ckpt_dir']
+    ckpt_dir = config['ckpt_dir']
     policy_class = config['policy_class']
     policy_config = config['policy_config']
-
-    exp_dir, exp_name = parse_id((LOG_DIR / config['task_name']).resolve(), config['exptid'])
 
     policy = make_policy(policy_class, policy_config)
     policy.cuda()
     
-    policy, ckpt_name, epoch = load_ckpt(policy, exp_dir, config['resume_ckpt'])
+    policy, ckpt_name, epoch = load_ckpt(policy, ckpt_dir, config['resume_ckpt'])
 
     policy.eval()
-    image_data = torch.rand((1, 2, 3, 480, 640), device='cuda') # TODO: change to actual image size
+    image_data = torch.rand((1, 1, 3, 224, 224), device='cuda') 
     qpos_data = torch.rand((1, config['state_dim']), device='cuda')
     input_data = (qpos_data, image_data)
 
     traced_policy = torch.jit.trace(policy, input_data)
-    save_path = os.path.join(exp_dir, f"traced_jit_{epoch}.pt")
+    save_path = os.path.join(ckpt_dir, f"traced_jit_{epoch}.pt")
     traced_policy.save(save_path)
     print("Saved traced actor at ", save_path)
 
@@ -273,10 +286,9 @@ if __name__ == '__main__':
     parser.add_argument('--task-name', action='store', type=str, help='task name', required=True)
     parser.add_argument('--exptid', action='store', type=str, help='experiment id', required=True)
     parser.add_argument('--dataset-path', action='store', type=str, help='path_to_hdf5_dataset', required=True)
+    
+    parser.add_argument('--saving-interval', action='store', type=int, default=5000, help='saving interval', required=False)
     args = vars(parser.parse_args())
-
-    current_dir = Path(__file__).parent.resolve()
-    LOG_DIR = (current_dir / 'logs/').resolve()
     
     # make dir
     os.makedirs(LOG_DIR, exist_ok=True)
