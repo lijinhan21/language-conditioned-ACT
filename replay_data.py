@@ -122,10 +122,14 @@ class Player:
         print("Video_length=", video_length, "Making video...")
         video_writer = KaedeVideoWriter(output_path, save_video=True, video_name=video_name, fps=30, single_video=True)
         for i in range(video_length):
-            images = [torch.tensor(episode[i]) for episode in video_out]
+            images = []
+            for episode in video_out:
+                img = episode[i]
+                img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+                img = cv2.flip(img, 0)
+                images.append(torch.tensor(img))
+            # images = [torch.tensor(episode[i]) for episode in video_out]
             for j in range(len(images)):
-                images[j] = cv2.flip(images[j], 0)
-                images[j] = cv2.cvtColor(images[j], cv2.COLOR_BGR2RGB)
                 images[j] = rearrange(images[j], 'h w c -> c h w')
             grid_image = make_grid(images, nrow=2).numpy()
             video_writer.append_image(grid_image)
