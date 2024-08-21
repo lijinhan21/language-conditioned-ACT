@@ -129,12 +129,12 @@ def main(args):
         return
 
     best_ckpt_info = train_bc(train_dataloader, val_dataloader, config)
-    best_epoch, min_val_loss, best_state_dict = best_ckpt_info
+    # best_epoch, min_val_loss, best_state_dict = best_ckpt_info
 
-    # save best checkpoint
-    ckpt_path = os.path.join(ckpt_dir, f'policy_best.ckpt')
-    torch.save(best_state_dict, ckpt_path)
-    print(f'Best ckpt, val loss {min_val_loss:.6f} @ epoch{best_epoch}')
+    # # save best checkpoint
+    # ckpt_path = os.path.join(ckpt_dir, f'policy_best.ckpt')
+    # torch.save(best_state_dict, ckpt_path)
+    # print(f'Best ckpt, val loss {min_val_loss:.6f} @ epoch{best_epoch}')
     wandb.finish()
 
 def make_policy(policy_class, policy_config):
@@ -174,16 +174,18 @@ def train_bc(train_dataloader, val_dataloader, config):
     policy = make_policy(policy_class, policy_config)
     policy.cuda()
     optimizer = make_optimizer(policy_class, policy)
+    init_epoch = 0
 
-    if config['resumeid']:
-        exp_dir, exp_name = parse_id((LOG_DIR / config['task_name']).resolve(), config['resumeid'])
-        policy, _, _ = load_ckpt(policy, exp_dir, config['resume_ckpt'])
-
+    if config['resume_ckpt']:
+        ckpt_dir = config['ckpt_dir']
+        policy, _, init_epoch = load_ckpt(policy, ckpt_dir, config['resume_ckpt'])
+        init_epoch = 1 + int(init_epoch)
+        
     min_val_loss = np.inf
     best_ckpt_info = None
 
     train_dataloader = repeater(train_dataloader)
-    for epoch in tqdm(range(num_epochs)):
+    for epoch in tqdm(range(init_epoch, num_epochs)):
         print(f'\nEpoch {epoch}')
 
         # training
@@ -287,7 +289,7 @@ if __name__ == '__main__':
     parser.add_argument('--exptid', action='store', type=str, help='experiment id', required=True)
     parser.add_argument('--dataset-path', action='store', type=str, help='path_to_hdf5_dataset', required=True)
     
-    parser.add_argument('--saving-interval', action='store', type=int, default=5000, help='saving interval', required=False)
+    parser.add_argument('--saving-interval', action='store', type=int, default=10000, help='saving interval', required=False)
     args = vars(parser.parse_args())
     
     # make dir

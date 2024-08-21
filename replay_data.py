@@ -26,6 +26,10 @@ class Player:
     def __init__(self, single_arm=True):
         
         self.single_arm = single_arm
+        if self.single_arm:
+            env_name = "HumanoidPour"
+        else:
+            env_name = "HumanoidIce"
         
         # Get controller config
         controller_config = load_controller_config(default_controller="JOINT_POSITION")
@@ -33,7 +37,7 @@ class Player:
         
         # Create argument configuration
         config = {
-            "env_name": "HumanoidPour", # TODO: get env_name from config
+            "env_name": env_name,
             "robots": "GR1FloatingBody",
             "controller_configs": controller_config,
         }
@@ -44,7 +48,7 @@ class Player:
             renderer="mujoco",
             has_offscreen_renderer=True,
             ignore_done=False,
-            horizon=250,
+            horizon=300,
             use_camera_obs=True,
             camera_names=["agentview", "robot0_robotview", "frontview"],
             camera_heights=720,
@@ -166,7 +170,7 @@ class Player:
 
 if __name__ == '__main__':
     
-    dataset_path = '/home/yifengz/dataset_absjoint_salt_smallrange_100.hdf5' # TODO: change with actual dataset path
+    dataset_path = '/data/william/dataset_absjoint_ice_40.hdf5' # TODO: change with actual dataset path
     
     with h5py.File(dataset_path, 'r') as f:
         root = f['data']['demo_0']

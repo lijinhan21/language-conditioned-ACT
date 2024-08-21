@@ -112,7 +112,7 @@ if __name__ == '__main__':
     chunk_size = args['chunk_size']
     device = "cuda"
     
-    timestamps = 250 # max length of an episode
+    timestamps = 300 # max length of an episode
 
     norm_stats = get_norm_stats(norm_stat_path)
     policy = load_policy(config)
