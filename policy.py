@@ -55,9 +55,20 @@ class CNNMLPPolicy(nn.Module):
 
     def __call__(self, qpos, image, actions=None, is_pad=None):
         env_state = None # TODO
-        normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                         std=[0.229, 0.224, 0.225])
-        image = normalize(image)
+        
+        if actions is not None: # training time
+            img_transform = transforms.Compose([
+                transforms.ColorJitter(brightness=0.5, contrast=0.5, saturation=0.5, hue=0.5),
+                transforms.RandomPerspective(distortion_scale=0.5),
+                transforms.RandomAffine(degrees=10, translate=(0.1,0.1), scale=(0.9,1.1)),
+                transforms.GaussianBlur(kernel_size=(9,9), sigma=(0.1,2.0)),
+                transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
+            ])
+        else: # inference time
+            img_transform = transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                                 std=[0.229, 0.224, 0.225])
+        
+        image = img_transform(image)
         if actions is not None: # training time
             actions = actions[:, 0]
             a_hat = self.model(qpos, image, env_state, actions)
