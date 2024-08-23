@@ -21,7 +21,18 @@ current_dir = Path(__file__).parent.resolve()
 LOG_DIR = (current_dir / 'logs/').resolve()
 
 from imitate_episodes import make_policy, load_ckpt, make_config
-from utils import joint_state_26_to_56
+from utils import joint_state_26_to_56, joint_state_56_to_26
+
+from gr1_interface.gr1_control.gr1_client import gr1_interface
+from gr1_interface.gr1_control.utils.variables import (
+    finger_joints,
+    name_to_limits,
+    name_to_sign,
+    name_to_urdf_idx,
+)
+
+from deoxys_vision.utils.camera_utils import assert_camera_ref_convention, get_camera_info
+from deoxys_vision.networking.camera_redis_interface import CameraRedisSubInterface
 
 def get_norm_stats(data_path):
     with open(data_path, "rb") as f:
@@ -80,6 +91,99 @@ def merge_act(actions_for_curr_step, k = 0.01):
 
     return raw_action
 
+finger_joint_idxs = [name_to_urdf_idx[j] for j in finger_joints]
+finger_joint_max = np.array([name_to_limits[j][1] for j in finger_joints])
+finger_joint_min = np.array([name_to_limits[j][0] for j in finger_joints])
+
+def process_urdf_joints(joints, shoulder_offset=0):
+    joints = joints * 180.0 / np.pi
+    sign_array = np.ones(56)
+    # body joints
+    for name_idx in name_to_sign:
+        sign_array[name_to_urdf_idx[name_idx]] = name_to_sign[name_idx]
+    joints[7] += shoulder_offset
+    joints[26] -= shoulder_offset
+    joints *= sign_array
+    
+    # hand joints
+    hand_joints = joints[finger_joint_idxs].copy()
+    hand_joints_limited = np.clip(hand_joints, finger_joint_min, finger_joint_max)
+    hand_joints_rel = (hand_joints_limited - finger_joint_min) / (
+        finger_joint_max - finger_joint_min
+    )
+    hand_joints_int = (1.0 - hand_joints_rel) * 1000
+
+    hand_joints_int = np.clip(hand_joints_int, 0, 1000).astype(int)
+    # switch left right finger control
+    hand_joints_int_reorderd = hand_joints_int[[5, 4, 3, 2, 1, 0, 11, 10, 9, 8, 7, 6]]
+
+    return joints, hand_joints_int_reorderd
+
+def run_interpolation(start_pos, end_pos, gr1, steps=50, state_saver=None):
+    for i in range(steps):
+        start_time = time.time_ns()
+        
+        q = start_pos + (end_pos - start_pos) * (i / steps)
+        body_joints, hand_joints = process_urdf_joints(q)
+        
+        gr1.control(arm_cmd=body_joints, hand_cmd=hand_joints, terminate=False)
+        if state_saver is not None:
+            state_saver.add_state(body_joints.copy())
+
+        end_time = time.time_ns()
+        time.sleep(
+            gr1.interval - np.clip(((end_time - start_time) / (10**9)), 0, gr1.interval)
+        )
+
+def interpolate_to_start_pos(gr1, steps=50, state_saver=None, lr=None):
+    init_pos = np.zeros(56)
+
+    T_pos = np.zeros(56)
+    if lr is not None:
+        T_pos[name_to_urdf_idx['joint_head_yaw']] = (-1 if lr == 'R' else 1) * 10 
+    T_pos[name_to_urdf_idx['joint_head_pitch']] = 19 
+    T_pos[name_to_urdf_idx['l_shoulder_roll']] = -90 
+    T_pos[name_to_urdf_idx['r_shoulder_roll']] = 90 
+    T_pos = T_pos / 180 * np.pi
+
+    L_pos = np.zeros(56)
+    if lr is not None:
+        L_pos[name_to_urdf_idx['joint_head_yaw']] = (-1 if lr == 'R' else 1) * 10
+    # L_pos[name_to_urdf_idx['joint_head_yaw']] = (-1 if args.lr == 'R' else 1) * 10
+    L_pos[name_to_urdf_idx['joint_head_pitch']] = 19
+    L_pos[name_to_urdf_idx['l_shoulder_roll']] = -90
+    L_pos[name_to_urdf_idx['r_shoulder_roll']] = 90
+    L_pos[name_to_urdf_idx['l_elbow_pitch']] = 90
+    L_pos[name_to_urdf_idx['r_elbow_pitch']] = -90
+    L_pos = L_pos / 180 * np.pi
+
+    # Interpolate to T-pos
+    run_interpolation(init_pos, T_pos, gr1, steps, state_saver)
+    # Interpolate to L-pos
+    run_interpolation(T_pos, L_pos, gr1, steps, state_saver)
+    return L_pos
+
+def interpolate_to_end_pos(current_pos, gr1, steps=50, state_saver=None):
+
+    L_pos = np.zeros(56)
+    # L_pos[name_to_urdf_idx['joint_head_yaw']] = (-1 if args.lr == 'R' else 1) * 10
+    L_pos[name_to_urdf_idx['joint_head_pitch']] = 19
+    L_pos[name_to_urdf_idx['l_shoulder_roll']] = -90
+    L_pos[name_to_urdf_idx['r_shoulder_roll']] = 90
+    L_pos[name_to_urdf_idx['l_elbow_pitch']] = 90
+    L_pos[name_to_urdf_idx['r_elbow_pitch']] = -90
+    L_pos = L_pos / 180 * np.pi
+
+    T_pos = np.zeros(56)
+    # T_pos[name_to_urdf_idx['joint_head_yaw']] = (-1 if args.lr == 'R' else 1) * 10 
+    T_pos[name_to_urdf_idx['joint_head_pitch']] = 19 
+    T_pos[name_to_urdf_idx['l_shoulder_roll']] = -90 
+    T_pos[name_to_urdf_idx['r_shoulder_roll']] = 90 
+    T_pos = T_pos / 180 * np.pi
+
+    run_interpolation(current_pos, L_pos, gr1, steps, state_saver)
+    run_interpolation(L_pos, T_pos, gr1, steps, state_saver)
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--eval', action='store_true')
@@ -134,9 +238,23 @@ if __name__ == '__main__':
     last_action_queue = None
     last_action_data = None
     
-    # TODO: start real robot control
-    # TODO: start redis client
-    # TODO: real robot interpolate to start pose
+    # start GR1 interface
+    gr1 = gr1_interface(
+        "10.42.0.21", pub_port_arm=5555, pub_port_hand=6666, sub_port=5556, rate=40
+    )   
+    print("start gr1 interface!")
+
+    # start redis client
+    assert_camera_ref_convention('rs_0')
+    camera_info = get_camera_info('rs_0')
+    camera_id = camera_info.camera_id
+    cr_interface = CameraRedisSubInterface(redis_host="localhost", camera_info=camera_info, use_depth=True)
+    cr_interface.start()
+
+    # interpolate to start pos
+    start_pos = interpolate_to_start_pos(gr1, steps=50, lr=None) 
+
+    input("Press Enter to start...")
     
     # ---
 
@@ -149,18 +267,16 @@ if __name__ == '__main__':
         output = None
         act_index = 0
         
-        L_pos = np.zeros(56)
-        # TODO: define L_pos
-        
-        last_state = L_pos.copy()
+        last_state = start_pos.copy()
             
         for t in tqdm(range(timestamps)):
             if history_stack > 0:
                 last_action_data = np.array(last_action_queue)
 
-            state = last_state.copy()
+            state = joint_state_56_to_26(last_state.copy())
             
-            agentview_rgb = None # replace with getting img from redis server
+            imgs = cr_interface.get_img() # getting img from redis server
+            agentview_rgb = cv2.cvtColor(imgs['color'], cv2.COLOR_BGR2RGB)
             agentview_rgb = raw_image_preprocess(agentview_rgb, crop=True)
             
             data = normalize_input(state, agentview_rgb, norm_stats, last_action_data)
@@ -173,12 +289,21 @@ if __name__ == '__main__':
             act = act * norm_stats["action_std"] + norm_stats["action_mean"]
 
             urdf_action = joint_state_26_to_56(act)
-            # TODO: convert urdf_action to real robot action, and send it to the robot
-            
+
+            # convert urdf_action to real robot action, and send it to the robot
+            run_interpolation(last_state, urdf_action, gr1, 5, state_saver=None)
+
             last_state = urdf_action.copy()
+        
+        interpolate_to_end_pos(last_state, gr1, steps=50)
+
+        # terminate gr1
+        gr1.control(terminate=True)
+        gr1.close_threads()
 
     except KeyboardInterrupt:
         
-        # TODO: some code
+        gr1.control(terminate=True)
+        gr1.close_threads()
         
         exit()

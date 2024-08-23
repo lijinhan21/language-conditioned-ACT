@@ -310,6 +310,18 @@ def joint_state_26_to_56(joint_states):
     
     return q
 
+def joint_state_56_to_26(joint_states_urdf):
+    """
+    Convert 56-dim joint states in urdf to 26-dim joint states for neural network processing.
+    """
+
+    right_idx = [25, 26, 27, 28, 29, 30, 31, 32, 33, 36, 38, 40, 42]
+    left_idx = [6, 7, 8, 9, 10, 11, 12, 13, 14, 17, 19, 21, 23]
+    all_arms_idx = left_idx + right_idx
+    joint_states = joint_states_urdf[all_arms_idx] # shape (26,)
+    
+    return joint_states
+
 def make_grid(images, nrow=8, padding=2, normalize=False, pad_value=0):
     """Make a grid of images. Make sure images is a 4D tensor in the shape of (B x C x H x W)) or a list of torch tensors."""
     grid_image = torchvision.utils.make_grid(images, nrow=nrow, padding=padding, normalize=normalize, pad_value=pad_value).permute(1, 2, 0)
