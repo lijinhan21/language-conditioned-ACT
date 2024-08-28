@@ -310,6 +310,27 @@ def joint_state_26_to_56(joint_states):
     
     return q
 
+def joint_state_26_to_56_real(joint_states):
+    """
+    Convert 26-dim joint states to 56-dim joint states in urdf for real robot deployment.
+    """
+    q = np.zeros(56)
+    
+    head_init = np.array([0.0, 0.0, 19 / 180 * np.pi])
+    torso_init = np.array([0.0, 0.0, 0.0])
+    q[:3] = torso_init
+    q[3:6] = head_init
+    
+    # left arm and hand
+    q[6:13] = joint_states[:7]
+    q[13:25] = extend_urdf_finger_cmds(joint_states[7:13])
+    
+    # right arm and hand
+    q[25:32] = joint_states[13:20]
+    q[32:44] = extend_urdf_finger_cmds(joint_states[20:26])
+    
+    return q
+
 def joint_state_56_to_26(joint_states_urdf):
     """
     Convert 56-dim joint states in urdf to 26-dim joint states for neural network processing.

@@ -21,7 +21,7 @@ current_dir = Path(__file__).parent.resolve()
 LOG_DIR = (current_dir / 'logs/').resolve()
 
 from imitate_episodes import make_policy, load_ckpt, make_config
-from utils import joint_state_26_to_56, joint_state_56_to_26
+from utils import joint_state_26_to_56_real, joint_state_56_to_26
 
 from gr1_interface.gr1_control.gr1_client import gr1_interface
 from gr1_interface.gr1_control.utils.variables import (
@@ -250,11 +250,6 @@ if __name__ == '__main__':
     camera_id = camera_info.camera_id
     cr_interface = CameraRedisSubInterface(redis_host="localhost", camera_info=camera_info, use_depth=True)
     cr_interface.start()
-
-    # interpolate to start pos
-    start_pos = interpolate_to_start_pos(gr1, steps=50, lr=None) 
-
-    input("Press Enter to start...")
     
     # ---
 
@@ -264,38 +259,60 @@ if __name__ == '__main__':
         num_actions_exe = chunk_size
     
     try:
-        output = None
-        act_index = 0
-        
-        last_state = start_pos.copy()
-            
-        for t in tqdm(range(timestamps)):
-            if history_stack > 0:
-                last_action_data = np.array(last_action_queue)
 
-            state = joint_state_56_to_26(last_state.copy())
-            
-            imgs = cr_interface.get_img() # getting img from redis server
-            agentview_rgb = cv2.cvtColor(imgs['color'], cv2.COLOR_BGR2RGB)
-            agentview_rgb = raw_image_preprocess(agentview_rgb, crop=True)
-            
-            data = normalize_input(state, agentview_rgb, norm_stats, last_action_data)
+        num_exp = 16
+        success_count = 0
 
-            if temporal_agg: # Must be true
-                output = policy(*data)[0].detach().cpu().numpy() # (1,chuck_size,action_dim)
-                all_time_actions[[t], t:t+chunk_size] = output
-                act = merge_act(all_time_actions[:, t])
+        for exp_id in range(num_exp):
+            
+            print("start new episode!", exp_id + 1, "/", num_exp)
+
+            output = None
+
+            # interpolate to start pos
+            start_pos = interpolate_to_start_pos(gr1, steps=50, lr=None) 
+            input("Please Adjust the positions of objects. Afterwards, press Enter to start...")
+
+            last_state = start_pos.copy()
                 
-            act = act * norm_stats["action_std"] + norm_stats["action_mean"]
+            for t in tqdm(range(timestamps)):
+                if history_stack > 0:
+                    last_action_data = np.array(last_action_queue)
 
-            urdf_action = joint_state_26_to_56(act)
+                state = joint_state_56_to_26(last_state.copy())
+                
+                imgs = cr_interface.get_img() # getting img from redis server
+                agentview_rgb = cv2.cvtColor(imgs['color'], cv2.COLOR_BGR2RGB)
+                agentview_rgb = raw_image_preprocess(agentview_rgb, crop=True)
+                
+                data = normalize_input(state, agentview_rgb, norm_stats, last_action_data)
 
-            # convert urdf_action to real robot action, and send it to the robot
-            run_interpolation(last_state, urdf_action, gr1, 5, state_saver=None)
+                if temporal_agg: # Must be true
+                    output = policy(*data)[0].detach().cpu().numpy() # (1,chuck_size,action_dim)
+                    all_time_actions[[t], t:t+chunk_size] = output
+                    act = merge_act(all_time_actions[:, t])
+                    
+                act = act * norm_stats["action_std"] + norm_stats["action_mean"]
 
-            last_state = urdf_action.copy()
-        
-        interpolate_to_end_pos(last_state, gr1, steps=50)
+                urdf_action = joint_state_26_to_56_real(act)
+
+                # convert urdf_action to real robot action, and send it to the robot
+                run_interpolation(last_state, urdf_action, gr1, 2, state_saver=None)
+
+                last_state = urdf_action.copy()
+            
+            interpolate_to_end_pos(last_state, gr1, steps=50)
+
+            str = input("Success or not?[y/n]")
+            if str == 'y':
+                print("Success!")
+                success_count += 1
+            else:
+                print("Failed!")
+
+            input("Press Enter to start next episode...")
+
+        print("Success rate:", success_count / num_exp)
 
         # terminate gr1
         gr1.control(terminate=True)
