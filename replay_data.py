@@ -23,13 +23,14 @@ from pathlib import Path
 current_dir = Path(__file__).parent.resolve()
 
 class Player:
-    def __init__(self, single_arm=True):
+    def __init__(self, single_arm=True, horizon=300):
         
         self.single_arm = single_arm
         if self.single_arm:
             env_name = "HumanoidPour"
         else:
             env_name = "HumanoidIce"
+        env_name = "HumanoidEmpty"
         
         # Get controller config
         controller_config = load_controller_config(default_controller="JOINT_POSITION")
@@ -48,7 +49,7 @@ class Player:
             renderer="mujoco",
             has_offscreen_renderer=True,
             ignore_done=False,
-            horizon=300,
+            horizon=horizon,
             use_camera_obs=True,
             camera_names=["agentview", "robot0_robotview", "frontview"],
             camera_heights=720,

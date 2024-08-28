@@ -137,7 +137,7 @@ if __name__ == '__main__':
     
     # ---
     
-    player = Player(single_arm)
+    player = Player(single_arm, horizon=timestamps + 5)
 
     if temporal_agg:
         all_time_actions = np.zeros([timestamps, timestamps+chunk_size, action_dim])
