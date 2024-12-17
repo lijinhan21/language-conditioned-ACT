@@ -26,6 +26,7 @@ def get_args_parser():
     # * Backbone
     parser.add_argument('--backbone', default='resnet18', type=str, # will be overridden
                         help="Name of the convolutional backbone to use")
+    parser.add_argument('--lang-backbone', default='CLIP', type=str)
     parser.add_argument('--dilation', action='store_true',
                         help="If true, we replace stride with dilation in the last convolutional block (DC5)")
     parser.add_argument('--position_embedding', default='sine', type=str, choices=('sine', 'learned'),
@@ -71,12 +72,13 @@ def get_args_parser():
     parser.add_argument('--ckpt_dir', default='/home/cxx/h1_hardware/data/logs', type=str, # will be overridden
                         help='ckpt_dir')
     
+    parser.add_argument('--config-path', action='store', type=str, help='path_to_config_of_datasets', required=True)
+    
     parser.add_argument('--no_wandb', action='store_true')
     parser.add_argument('--resumeid', action='store', type=str, help='resume id', required=False)
     parser.add_argument('--resume_ckpt', action='store', type=str, help='resume ckpt', required=False)
     parser.add_argument('--task-name', action='store', type=str, help='task name', required=True)
     parser.add_argument('--exptid', action='store', type=str, help='experiment id', required=True)
-    parser.add_argument('--dataset-path', action='store', type=str, help='path_to_hdf5_dataset', required=True)
     parser.add_argument('--saving-interval', action='store', type=int, default=5000, help='saving interval', required=False)
 
 

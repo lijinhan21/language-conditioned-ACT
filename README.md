@@ -1,5 +1,12 @@
 
-# ACT for OKAMI
+# ACT
+
+## Dev:
+
+```
+python act/imitate_episodes.py --policy_class ACT --kl_weight 10 --chunk_size 60 --hidden_dim 512 --batch_size 45 --dim_feedforward 3200 --num_epochs 50000 --lr 5e-5 --seed 0 --task-name test --exptid 01-test --config-path config/data2.yml
+```
+
 
 ## Installation
 
@@ -12,7 +19,6 @@ pip install pyquaternion
 pip install pyyaml
 pip install rospkg
 pip install pexpect
-pip install mujoco==3.1.6
 pip install dm_control==1.0.14
 pip install opencv-python
 pip install matplotlib
@@ -21,6 +27,8 @@ pip install packaging
 pip install h5py
 pip install ipython
 pip install wandb
+pip install imageio
+pip install transformers
 cd detr && pip install -e .
 ```
 

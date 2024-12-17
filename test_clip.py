@@ -1,0 +1,59 @@
+import torch
+from transformers import CLIPProcessor, CLIPModel, CLIPTokenizer
+import numpy as np
+from typing import Union, List
+
+class CLIPTextEmbedding:
+    def __init__(self, model_name: str = "openai/clip-vit-base-patch32"):
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.model = CLIPModel.from_pretrained(model_name).to(self.device)
+        # self.processor = CLIPProcessor.from_pretrained(model_name)
+        self.processor = CLIPTokenizer.from_pretrained(model_name)
+        self.model.eval()
+        
+    def encode_text(self, text: Union[str, List[str]], normalize: bool = True) -> np.ndarray:
+        # if isinstance(text, str):
+            # text = [text]
+            
+        with torch.no_grad():
+            inputs = self.processor(text=text, return_tensors="pt", padding=True)
+            # text_features = self.model.get_text_features(**{k: v.to(self.device) for k, v in inputs.items()})
+            inputs = {k: v.to(self.device) for k, v in inputs.items()}
+            
+            print("shapef of inputs: ", inputs['input_ids'].shape, inputs['attention_mask'].shape)
+            inputs["input_ids"] = inputs["input_ids"].unsqueeze(0)
+            inputs['attention_mask'] = inputs["attention_mask"].unsqueeze(0)
+            
+            
+            
+            text_features = self.model.get_text_features(**inputs)
+            
+            if normalize:
+                text_features = text_features / text_features.norm(dim=1, keepdim=True)
+                
+            embeddings = text_features.cpu().numpy()
+            
+        return embeddings
+    
+    def calculate_similarity(self, text1: str, text2: str) -> float:
+        emb1 = self.encode_text(text1)
+        emb2 = self.encode_text(text2)
+        return np.dot(emb1, emb2.T)[0][0]
+
+# Example usage
+def main():
+    clip_encoder = CLIPTextEmbedding()
+    
+    # Single text example
+    embedding = clip_encoder.encode_text("A beautiful sunset")
+    print(f"Embedding shape: {embedding.shape}")
+    
+    # Similarity example
+    similarity = clip_encoder.calculate_similarity(
+        "A dog running", 
+        "A puppy playing"
+    )
+    print(f"Similarity score: {similarity:.3f}")
+
+if __name__ == "__main__":
+    main()

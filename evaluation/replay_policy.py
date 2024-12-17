@@ -22,7 +22,7 @@ from pathlib import Path
 current_dir = Path(__file__).parent.resolve()
 LOG_DIR = (current_dir / 'logs/').resolve()
 
-from imitate_episodes import make_policy, load_ckpt, make_config
+from ISR_project.ACT.act.imitate_episodes import make_policy, load_ckpt, make_config
 
 def get_norm_stats(data_path):
     with open(data_path, "rb") as f:
@@ -51,7 +51,7 @@ def normalize_input(state, agentview_rgb, norm_stats, last_action_data=None):
     qpos_data = (torch.from_numpy(state) - norm_stats["qpos_mean"]) / norm_stats["qpos_std"]
     image_data = image_data.view((1, 1, 3, 224, 224)).float().to(device='cuda')
     state_dim = len(norm_stats["qpos_mean"])
-    qpos_data = qpos_data.view((1, state_dim)).float().to(device='cuda') # TODO: change 13 to state_dim
+    qpos_data = qpos_data.view((1, state_dim)).float().to(device='cuda')
 
     if last_action_data is not None:
         last_action_data = torch.from_numpy(last_action_data).to(device='cuda').view((1, -1)).to(torch.float)
@@ -80,7 +80,7 @@ if __name__ == '__main__':
     parser.add_argument('--lr', action='store', type=float, help='lr', required=True)
     parser.add_argument('--qpos_noise_std', action='store', default=0, type=float, help='lr', required=False)
 
-    parser.add_argument('--backbone', action='store', type=str, default='resnet18', help='visual backbone, choose from resnet18, resnet34, dino_v2', required=False)
+    parser.add_argument('--backbone', action='store', type=str, default='resnet18', help='visual backbone, choose from resnet18, resnet34, dino_v2,CLIP', required=False)
     parser.add_argument('--state_dim', action='store', type=int, default=13, help='state_dim', required=False)
     parser.add_argument('--action_dim', action='store', type=int, default=13, help='action_dim', required=False)
     
@@ -111,8 +111,15 @@ if __name__ == '__main__':
 
     chunk_size = args['chunk_size']
     device = "cuda"
+
+    with h5py.File(args['dataset_path'], 'r') as f:
+        root = f['data']['demo_0']
+        actions = np.array(root['actions'][()])
+        agentview_rgb = np.array(root['obs']['agentview_rgb'][()])
+        states = np.array(root['obs']['joint_states'][()])
     
-    timestamps = 300 # max length of an episode
+    timestamps = states.shape[0]
+    single_arm = (len(actions[0]) == 13)
 
     norm_stats = get_norm_stats(norm_stat_path)
     policy = load_policy(config)
@@ -120,13 +127,17 @@ if __name__ == '__main__':
     policy.eval()
 
     history_stack = 0
-    last_action_queue = None
-    last_action_data = None
+    if history_stack > 0:
+        last_action_queue = deque(maxlen=history_stack)
+        for i in range(history_stack):
+            last_action_queue.append(actions[0])
+    else:
+        last_action_queue = None
+        last_action_data = None
     
     # ---
     
-    single_arm = (action_dim == 13)
-    player = Player(single_arm)
+    player = Player(single_arm, horizon=timestamps + 5)
 
     if temporal_agg:
         all_time_actions = np.zeros([timestamps, timestamps+chunk_size, action_dim])
@@ -136,50 +147,30 @@ if __name__ == '__main__':
     try:
         output = None
         act_index = 0
-        
-        num_episodes = 16
-        success_count = 0
-        video_out = []
-        for episode_idx in range(num_episodes):
-            print("Episode", episode_idx)
-            
-            for t in tqdm(range(timestamps)):
-                if history_stack > 0:
-                    last_action_data = np.array(last_action_queue)
+        for t in tqdm(range(timestamps)):
+            if history_stack > 0:
+                last_action_data = np.array(last_action_queue)
 
-                state, agentview_rgb = player.get_state_and_images()
-                data = normalize_input(state, agentview_rgb, norm_stats, last_action_data)
+            data = normalize_input(states[t], agentview_rgb[t], norm_stats, last_action_data)
 
-                if temporal_agg:
-                    output = policy(*data)[0].detach().cpu().numpy() # (1,chuck_size,action_dim)
-                    all_time_actions[[t], t:t+chunk_size] = output
-                    act = merge_act(all_time_actions[:, t])
-                else:
-                    if output is None or act_index == num_actions_exe-1:
-                        print("Inference...")
-                        output = policy(*data)[0].detach().cpu().numpy()
-                        act_index = 0
-                    act = output[act_index]
-                    act_index += 1
-                # import ipdb; ipdb.set_trace()
-                if history_stack > 0:
-                    last_action_queue.append(act)
-                act = act * norm_stats["action_std"] + norm_stats["action_mean"]
-                reward, done = player.step(act, agentview_rgb)
-                if done:
-                    if reward > 0:
-                        print("Success!")
-                        success_count += 1
-                    else:
-                        print("Failed!")
-                    break
+            if temporal_agg:
+                output = policy(*data)[0].detach().cpu().numpy() # (1,chuck_size,action_dim)
+                all_time_actions[[t], t:t+chunk_size] = output
+                act = merge_act(all_time_actions[:, t])
+            else:
+                if output is None or act_index == num_actions_exe-1:
+                    print("Inference...")
+                    output = policy(*data)[0].detach().cpu().numpy()
+                    act_index = 0
+                act = output[act_index]
+                act_index += 1
+            # import ipdb; ipdb.set_trace()
+            if history_stack > 0:
+                last_action_queue.append(act)
+            act = act * norm_stats["action_std"] + norm_stats["action_mean"]
+            player.step(act, agentview_rgb[t])
+        player.render_single_episode_video(current_dir, f"{config['task_name']}_{config['exptid']}_replay.mp4")
             
-            video_out.append(player.get_episode_recording())
-            player.reset()
-        
-        print("Success rate:", success_count / num_episodes)
-        player.render_multiple_episode_video(video_out, current_dir, f"{config['task_name']}_{config['exptid']}_eval_{config['resume_ckpt']}.mp4")
-        
     except KeyboardInterrupt:
         player.end()
         exit()

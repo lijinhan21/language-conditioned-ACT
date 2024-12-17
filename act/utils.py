@@ -11,12 +11,17 @@ from pathlib import Path
 
 import imageio
 import torchvision
+import json
+import yaml
+
+import init_path
+
+from transformers import CLIPModel, CLIPTokenizer
 
 class EpisodicDataset(torch.utils.data.Dataset):
-    def __init__(self, episode_ids, dataset_path, camera_names, norm_stats, episode_len, history_stack=0):
+    def __init__(self, episode_ids, dataset_paths, lan_instructions, camera_names, norm_stats, episode_len, history_stack=0):
         super(EpisodicDataset).__init__()
         self.episode_ids = episode_ids
-        self.dataset_path = dataset_path
         self.camera_names = camera_names
         self.norm_stats = norm_stats
         self.is_sim = None
@@ -32,23 +37,47 @@ class EpisodicDataset(torch.utils.data.Dataset):
         for cam_name in self.camera_names:
             self.image_dict[cam_name] = []
         self.actions = []
+        self.language_instructions = []
+        
+        self.CLIP_tokenizer = CLIPTokenizer.from_pretrained("openai/clip-vit-base-patch32")
 
         # Read in all the data
-        with h5py.File(self.dataset_path, 'r') as f:
-            root = f['data']
-            for i, episode_id in enumerate(self.episode_ids):
-                self.is_sims.append(None)
-                self.original_action_shapes.append(root[f'demo_{episode_id}']['actions'][()].shape)
+        for idx, (dataset_path, lan_ins) in enumerate(zip(dataset_paths, lan_instructions)):
+            num_episodes = find_episodes_num(dataset_path)
+            with h5py.File(dataset_path, 'r') as f:
+                root = f['data']
+                for episode_id in range(1, num_episodes+1):
+                    self.is_sims.append(None)
+                    self.original_action_shapes.append(root[f'demo_{episode_id}']['actions'][()].shape)
+                    
+                    ep_meta_dict = json.loads(root[f'demo_{episode_id}'].attrs['ep_meta'])
+                    lan_ins_from_ep = ep_meta_dict['lang']
 
-                self.states.append(np.array(root[f'demo_{episode_id}']['obs']['joint_states'][()]))
-                for cam_name in self.camera_names:
-                    imgs = root[f'demo_{episode_id}']['obs'][cam_name][()]
-                    # rearrange the image data to be in the form of (time, C, H, W)
-                    imgs = rearrange(imgs, 't h w c -> t c h w')
-                    self.image_dict[cam_name].append(imgs)
-                self.actions.append(np.array(root[f'demo_{episode_id}']['actions'][()]))
+                    self.states.append(np.array(root[f'demo_{episode_id}']['obs']['robot0_joint_pos'][()]))
+                    for cam_name in self.camera_names:
+                        imgs = root[f'demo_{episode_id}']['obs'][cam_name][()]
+                        # rearrange the image data to be in the form of (time, C, H, W)
+                        imgs = rearrange(imgs, 't h w c -> t c h w')
+                        self.image_dict[cam_name].append(imgs)
+                    self.actions.append(np.array(root[f'demo_{episode_id}']['actions'][()]))
+                    if lan_ins is not None:
+                        self.language_instructions.append(lan_ins)
+                    else:
+                        self.language_instructions.append(lan_ins_from_ep)
+                        
+                    # print("shape of state", self.states[-1].shape) # 7
+                    # print("shape of actions", self.actions[-1].shape) # 12
 
-        self.is_sim = None # TODO: check if this should be False or None
+        # shuffle the data according to episode_ids
+        self.states = [self.states[i] for i in self.episode_ids]
+        for cam_name in self.camera_names:
+            self.image_dict[cam_name] = [self.image_dict[cam_name][i] for i in self.episode_ids]
+        self.actions = [self.actions[i] for i in self.episode_ids]
+        self.language_instructions = [self.language_instructions[i] for i in self.episode_ids]
+        self.is_sims = [self.is_sims[i] for i in self.episode_ids]
+        self.original_action_shapes = [self.original_action_shapes[i] for i in self.episode_ids]
+
+        self.is_sim = None 
 
         self.episode_len = episode_len
         self.cumulative_len = np.cumsum(self.episode_len)
@@ -82,6 +111,17 @@ class EpisodicDataset(torch.utils.data.Dataset):
         image_dict = dict()
         for cam_name in self.camera_names:
             image_dict[cam_name] = self.image_dict[cam_name][index][start_ts]
+            
+        lang_ins = self.language_instructions[index]
+        lang_tokens = self.CLIP_tokenizer(
+            lang_ins, 
+            padding='max_length', 
+            truncation=True, 
+            max_length=25,
+            return_tensors="pt"
+        )#['input_ids']
+        # print('shape of lang_tokens', lang_tokens.shape, type(lang_tokens))
+
         # get all actions after and including start_ts
         all_time_action = self.actions[index][:]
 
@@ -117,26 +157,29 @@ class EpisodicDataset(torch.utils.data.Dataset):
         if self.history_stack > 0:
             last_action_data = (last_action_data - self.norm_stats['action_mean']) / self.norm_stats['action_std']
             qpos_data = torch.cat((qpos_data, last_action_data.flatten()))
-        # print(f"qpos_data: {qpos_data.shape}, action_data: {action_data.shape}, image_data: {image_data.shape}, is_pad: {is_pad.shape}")
+        # print(f"qpos_data: {qpos_data.shape}, action_data: {action_data.shape}, image_data: {image_data.shape}, is_pad: {is_pad.shape}, lang_tokens: {type(lang_tokens)}")
         
-        return image_data, qpos_data, action_data, is_pad
+        return image_data, qpos_data, lang_tokens, action_data, is_pad
 
 
-def get_norm_stats(dataset_path, num_episodes):
+def get_norm_stats(dataset_paths, num_episodes):
     
     all_qpos_data = []
     all_action_data = []
     all_episode_len = []
     
-    with h5py.File(dataset_path, 'r') as f:
-        root = f['data']
-        for episode_idx in range(num_episodes):
-            qpos = root[f'demo_{episode_idx}']['obs']['joint_states'][()]
-            action = root[f'demo_{episode_idx}']['actions'][()]
-            
-            all_qpos_data.append(torch.from_numpy(qpos))
-            all_action_data.append(torch.from_numpy(action))
-            all_episode_len.append(len(qpos))
+    for dataset_path in dataset_paths:
+        with h5py.File(dataset_path, 'r') as f:
+            root = f['data']
+            num_data_episodes = len(list(root.keys()))
+            for episode_idx in range(1, num_data_episodes+1):
+                qpos = root[f'demo_{episode_idx}']['obs']['robot0_joint_pos'][()]
+                action = root[f'demo_{episode_idx}']['actions'][()]
+                # print("shape of qpos and action are:", qpos.shape, action.shape)
+                
+                all_qpos_data.append(torch.from_numpy(qpos))
+                all_action_data.append(torch.from_numpy(action))
+                all_episode_len.append(len(qpos))
     
     all_qpos_data = torch.cat(all_qpos_data)
     all_action_data = torch.cat(all_action_data)
@@ -165,7 +208,8 @@ def find_episodes_num(dataset_path):
     """
     with h5py.File(dataset_path, 'r') as f:
         root = f['data']
-        episodes_num = root.attrs['num_demos'] 
+        episodes_num = len(list(root.keys())) 
+        # print("all_keys=", list(root.keys()))
     return episodes_num
 
 def BatchSampler(batch_size, episode_len_l, sample_weights=None):
@@ -179,10 +223,12 @@ def BatchSampler(batch_size, episode_len_l, sample_weights=None):
             batch.append(step_idx)
         yield batch
 
-def load_data(dataset_path, camera_names, batch_size_train, batch_size_val=None):
-    print(f'\nData from: {dataset_path}\n')
-
-    num_episodes = find_episodes_num(dataset_path)
+def load_data(dataset_paths, lan_instructions, camera_names, batch_size_train, batch_size_val=None):
+    # print(f'\nData from: ')
+    num_episodes = 0
+    for idx, (dataset_path, lan_ins) in enumerate(zip(dataset_paths, lan_instructions)):
+        # print(f'{dataset_path} with language instruction: {lan_ins}')
+        num_episodes += find_episodes_num(dataset_path)
     
     # No validation set
     shuffled_indices = np.random.permutation(num_episodes)
@@ -190,13 +236,13 @@ def load_data(dataset_path, camera_names, batch_size_train, batch_size_val=None)
     print(f"Train episodes: {len(train_indices)}")
     
     # obtain normalization stats for qpos and action
-    norm_stats, all_episode_len = get_norm_stats(dataset_path, num_episodes)
+    norm_stats, all_episode_len = get_norm_stats(dataset_paths, num_episodes)
 
     train_episode_len_l = [all_episode_len[i] for i in train_indices]
     batch_sampler_train = BatchSampler(batch_size_train, train_episode_len_l)
 
     # construct dataset and dataloader
-    train_dataset = EpisodicDataset(train_indices, dataset_path, camera_names, norm_stats, train_episode_len_l)
+    train_dataset = EpisodicDataset(train_indices, dataset_paths, lan_instructions, camera_names, norm_stats, train_episode_len_l)
     train_dataloader = DataLoader(train_dataset, batch_sampler=batch_sampler_train, pin_memory=True, num_workers=16, prefetch_factor=2)
 
     return train_dataloader, None, norm_stats, train_dataset.is_sim
@@ -252,96 +298,6 @@ def find_all_ckpt(base_dir, prefix="policy_epoch_"):
     epoch = int(ckpt_files[0].split(prefix)[-1].split('_')[0])
     return ckpt_files[0], epoch
 
-def extend_urdf_finger_cmds(finger_cmds):
-    """
-    Convert 6-dim finger cmds to 12-dim finger cmds in urdf.
-    """
-    mapping_base = [0, 1, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5]
-    mapping_scale = [1, 1, 1, 1.13, 1, 1.08, 1, 1.15, 1, 1.13, 1, 1.13]
-
-    actions = finger_cmds[mapping_base] * mapping_scale
-
-    return np.array(actions)
-
-def extend_delta_from_13_to_56(right_arm_q):
-    # right_arm_q: shape (13,)
-    # return: shape (56,)
-    
-    q = np.zeros(56)
-    
-    q[25:32] = right_arm_q[:7]
-    q[32:44] = extend_urdf_finger_cmds(right_arm_q[7:])
-    
-    return q
-
-def joint_state_13_to_56(joint_states):
-    """
-    Convert 13-dim joint states to 56-dim joint states in urdf.
-    """
-    q = np.zeros(56)
-    
-    head_init = np.array([0.0, 0.0, 0.34])
-    torso_init = np.array([0.0, 0.22, 0.0])
-    q[:3] = torso_init
-    q[3:6] = head_init
-    
-    q[25:32] = joint_states[:7]
-    q[32:44] = extend_urdf_finger_cmds(joint_states[7:])
-    return q
-
-def joint_state_26_to_56(joint_states):
-    """
-    Convert 26-dim joint states to 56-dim joint states in urdf.
-    """
-    q = np.zeros(56)
-    
-    head_init = np.array([0.0, 0.0, 0.34])
-    torso_init = np.array([0.0, 0.22, 0.0])
-    q[:3] = torso_init
-    q[3:6] = head_init
-    
-    # left arm and hand
-    q[6:13] = joint_states[:7]
-    q[13:25] = extend_urdf_finger_cmds(joint_states[7:13])
-    
-    # right arm and hand
-    q[25:32] = joint_states[13:20]
-    q[32:44] = extend_urdf_finger_cmds(joint_states[20:26])
-    
-    return q
-
-def joint_state_26_to_56_real(joint_states):
-    """
-    Convert 26-dim joint states to 56-dim joint states in urdf for real robot deployment.
-    """
-    q = np.zeros(56)
-    
-    head_init = np.array([0.0, 0.0, 19 / 180 * np.pi])
-    torso_init = np.array([0.0, 0.0, 0.0])
-    q[:3] = torso_init
-    q[3:6] = head_init
-    
-    # left arm and hand
-    q[6:13] = joint_states[:7]
-    q[13:25] = extend_urdf_finger_cmds(joint_states[7:13])
-    
-    # right arm and hand
-    q[25:32] = joint_states[13:20]
-    q[32:44] = extend_urdf_finger_cmds(joint_states[20:26])
-    
-    return q
-
-def joint_state_56_to_26(joint_states_urdf):
-    """
-    Convert 56-dim joint states in urdf to 26-dim joint states for neural network processing.
-    """
-
-    right_idx = [25, 26, 27, 28, 29, 30, 31, 32, 33, 36, 38, 40, 42]
-    left_idx = [6, 7, 8, 9, 10, 11, 12, 13, 14, 17, 19, 21, 23]
-    all_arms_idx = left_idx + right_idx
-    joint_states = joint_states_urdf[all_arms_idx] # shape (26,)
-    
-    return joint_states
 
 def make_grid(images, nrow=8, padding=2, normalize=False, pad_value=0):
     """Make a grid of images. Make sure images is a 4D tensor in the shape of (B x C x H x W)) or a list of torch tensors."""
@@ -412,124 +368,30 @@ class KaedeVideoWriter():
             print(f"Saved videos to {video_name}.")
 
 
-name_to_urdf_idx = {
-    "joint_waist_yaw": 0,
-    "joint_waist_pitch": 1,
-    "joint_waist_roll": 2,
-    "joint_head_yaw": 3,
-    "joint_head_roll": 4,
-    "joint_head_pitch": 5,
-    "l_shoulder_pitch": 6,
-    "l_shoulder_roll": 7,
-    "l_shoulder_yaw": 8,
-    "l_elbow_pitch": 9,
-    "l_wrist_yaw": 10,
-    "l_wrist_roll": 11,
-    "l_wrist_pitch": 12,
-    "joint_LFinger0": 13,
-    "joint_LFinger1": 14,
-    "joint_LFinger2": 15,
-    "joint_LFinger3": 16,
-    "joint_LFinger11": 17,
-    "joint_LFinger12": 18,
-    "joint_LFinger14": 19,
-    "joint_LFinger15": 20,
-    "joint_LFinger5": 21,
-    "joint_LFinger6": 22,
-    "joint_LFinger8": 23,
-    "joint_LFinger9": 24,
-    "r_shoulder_pitch": 25,
-    "r_shoulder_roll": 26,
-    "r_shoulder_yaw": 27,
-    "r_elbow_pitch": 28,
-    "r_wrist_yaw": 29,
-    "r_wrist_roll": 30,
-    "r_wrist_pitch": 31,
-    "joint_RFinger0": 32,
-    "joint_RFinger1": 33,
-    "joint_RFinger2": 34,
-    "joint_RFinger3": 35,
-    "joint_RFinger11": 36,
-    "joint_RFinger12": 37,
-    "joint_RFinger14": 38,
-    "joint_RFinger15": 39,
-    "joint_RFinger5": 40,
-    "joint_RFinger6": 41,
-    "joint_RFinger8": 42,
-    "joint_RFinger9": 43,
-    "l_hip_roll": 44,
-    "l_hip_yaw": 45,
-    "l_hip_pitch": 46,
-    "l_knee_pitch": 47,
-    "l_ankle_pitch": 48,
-    "l_ankle_roll": 49,
-    "r_hip_roll": 50,
-    "r_hip_yaw": 51,
-    "r_hip_pitch": 52,
-    "r_knee_pitch": 53,
-    "r_ankle_pitch": 54,
-    "r_ankle_roll": 55,
-}
-
-name_to_limits = {
-    'l_hip_roll': (-0.08726646259971647, 0.7853981633974483), 
-    'l_hip_yaw': (-0.6981317007977318, 0.6981317007977318), 
-    'l_hip_pitch': (-1.7453292519943295, 0.6981317007977318), 
-    'l_knee_pitch': (-0.08726646259971647, 1.9198621771937625), 
-    'l_ankle_pitch': (-1.0471975511965976, 0.5235987755982988), 
-    'l_ankle_roll': (-0.4363323129985824, 0.4363323129985824), 
-    'r_hip_roll': (-0.7853981633974483, 0.08726646259971647), 
-    'r_hip_yaw': (-0.6981317007977318, 0.6981317007977318), 
-    'r_hip_pitch': (-1.7453292519943295, 0.6981317007977318), 
-    'r_knee_pitch': (-0.08726646259971647, 1.9198621771937625), 
-    'r_ankle_pitch': (-1.0471975511965976, 0.5235987755982988), 
-    'r_ankle_roll': (-0.4363323129985824, 0.4363323129985824), 
-    'joint_waist_yaw': (-1.0471975511965976, 1.0471975511965976), 
-    'joint_waist_pitch': (-0.5235987755982988, 1.2217304763960306), 
-    'joint_waist_roll': (-0.6981317007977318, 0.6981317007977318), 
-    'joint_head_yaw': (-2.705260340591211, 2.705260340591211), 
-    'joint_head_roll': (-0.3490658503988659, 0.3490658503988659), 
-    'joint_head_pitch': (-0.5235987755982988, 0.3490658503988659), 
-    'l_shoulder_pitch': (-1.0471975511965976, 2.6179938779914944), 
-    'l_shoulder_roll': (-2.4085543677521746, 0.20943951023931956), 
-    'l_shoulder_yaw': (-1.5707963267948966, 1.5707963267948966), 
-    'l_elbow_pitch': (0.0, 1.5707963267948966), 
-    'l_wrist_yaw': (-1.5707963267948966, 1.5707963267948966), 
-    'l_wrist_roll': (-0.3665191429188092, 0.3665191429188092), 
-    'l_wrist_pitch': (-0.3665191429188092, 0.3665191429188092), 
-    'joint_LFinger0': (0.0, 1.2915436464758039), 
-    'joint_LFinger1': (0.0, 0.6806784082777885), 
-    'joint_LFinger2': (0.0, 0.767944870877505), 
-    'joint_LFinger3': (0.0, 0.5934119456780721), 
-    'joint_LFinger5': (0.0, 1.6231562043547265), 
-    'joint_LFinger6': (0.0, 1.8151424220741028), 
-    'joint_LFinger8': (0.0, 1.6231562043547265), 
-    'joint_LFinger9': (0.0, 1.7453292519943295), 
-    'joint_LFinger11': (0.0, 1.6231562043547265), 
-    'joint_LFinger12': (0.0, 1.7453292519943295), 
-    'joint_LFinger14': (0.0, 1.6231562043547265), 
-    'joint_LFinger15': (0.0, 1.8675022996339325), 
-    'r_shoulder_pitch': (-2.6179938779914944, 1.0471975511965976), 
-    'r_shoulder_roll': (-0.20943951023931956, 2.4085543677521746), 
-    'r_shoulder_yaw': (-1.5707963267948966, 1.5707963267948966), 
-    'r_elbow_pitch': (-1.5707963267948966, 0.0), 
-    'r_wrist_yaw': (-1.5707963267948966, 1.5707963267948966), 
-    'r_wrist_roll': (-0.3665191429188092, 0.3665191429188092), 
-    'r_wrist_pitch': (-0.3665191429188092, 0.3665191429188092), 
-    'joint_RFinger0': (0.0, 1.2915436464758039), 
-    'joint_RFinger1': (0.0, 0.6806784082777885), 
-    'joint_RFinger2': (0.0, 0.767944870877505), 
-    'joint_RFinger3': (0.0, 0.5934119456780721), 
-    'joint_RFinger5': (0.0, 1.6231562043547265), 
-    'joint_RFinger6': (0.0, 1.8151424220741028), 
-    'joint_RFinger8': (0.0, 1.6231562043547265), 
-    'joint_RFinger9': (0.0, 1.7453292519943295), 
-    'joint_RFinger11': (0.0, 1.6231562043547265), 
-    'joint_RFinger12': (0.0, 1.7453292519943295), 
-    'joint_RFinger14': (0.0, 1.6231562043547265), 
-    'joint_RFinger15': (0.0, 1.8675022996339325)
-}
-
-
 if __name__ == '__main__':
-    load_data("/home/yifengz/dataset_absjoint_salt_smallrange_100.hdf5", ["agentview_rgb"], 64)
+    # load_data("/home/yifengz/dataset_absjoint_salt_smallrange_100.hdf5", ["agentview_rgb"], 64)
+    
+    if False:
+        dataset_paths = [
+            '/home/zhaoyixiu/ISR_project/robocasa/datasets/v0.1/single_stage/kitchen_pnp/PnPCounterToCab/2024-04-24/demo_gentex_im128_randcams.hdf5',
+            '/home/zhaoyixiu/ISR_project/robocasa/datasets/v0.1/single_stage/kitchen_pnp/PnPCounterToMicrowave/2024-04-27/demo_gentex_im128_randcams.hdf5'
+        ]
+        camera_names = ['robot0_agentview_left_image']
+        lan_instructions = [
+        # 'Pick up item from counter and place it to cabinent',
+            None,
+            None,
+        ]
+    
+    config_file_path = 'config/data2.yml'
+    config = yaml.safe_load(open(config_file_path, 'r'))
+    
+    dataset_paths = config['dataset_paths']
+    camera_names = config['camera_names']
+    lan_instructions = config['lan_instructions']
+    
+    print(f"dataset_paths: {dataset_paths}")
+    print(f"camera_names: {camera_names}")
+    print(f"lan_instructions: {lan_instructions}")
+    
+    load_data(dataset_paths, lan_instructions, camera_names, 64)

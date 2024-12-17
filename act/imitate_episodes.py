@@ -16,6 +16,9 @@ from policy import ACTPolicy, CNNMLPPolicy
 # from .visualize_episodes import save_videos
 import wandb
 
+import init_path
+import yaml
+
 # from sim_env import BOX_POSE
 # from constants import SIM_TASK_CONFIGS
 import IPython
@@ -55,6 +58,7 @@ def make_config(args):
     action_dim = args['action_dim'] 
     lr_backbone = 1e-5
     backbone = args['backbone']
+    lang_backbone = args['lang_backbone']
     if policy_class == 'ACT':
         enc_layers = 4
         dec_layers = 7
@@ -66,6 +70,7 @@ def make_config(args):
                          'dim_feedforward': args['dim_feedforward'],
                          'lr_backbone': lr_backbone,
                          'backbone': backbone,
+                         'lang_backbone': lang_backbone,
                          'enc_layers': enc_layers,
                          'dec_layers': dec_layers,
                          'nheads': nheads,
@@ -113,9 +118,11 @@ def main(args):
     ckpt_dir = config['ckpt_dir']
     
     mode = "disabled" if args["no_wandb"] or args["save_jit"] else "online"
-    wandb.init(project="OKAMI_act", name=args['exptid'], group=task_name, entity="lijinhan", mode=mode)
+    wandb.init(project="ISR_act", name=args['exptid'], group=task_name, mode=mode)
     wandb.config.update(config)
-    train_dataloader, val_dataloader, stats, _ = load_data(args["dataset_path"], camera_names, batch_size_train, batch_size_val)
+    
+    dataset_config = yaml.safe_load(open(args['config_path'], 'r'))
+    train_dataloader, val_dataloader, stats, _ = load_data(dataset_paths=dataset_config['dataset_paths'], camera_names=dataset_config['camera_names'], lan_instructions=dataset_config['lan_instructions'], batch_size_train=batch_size_train, batch_size_val=batch_size_val)
 
     # save dataset stats
     if not os.path.isdir(ckpt_dir):
@@ -157,9 +164,16 @@ def make_optimizer(policy_class, policy):
     return optimizer
 
 def forward_pass(data, policy):
-    image_data, qpos_data, action_data, is_pad = data
+    image_data, qpos_data, lang_data, action_data, is_pad = data
+    
+    # print("shapes")
+    # print(image_data.shape, qpos_data.shape, action_data.shape, is_pad.shape)
+    # input('aaaaaaaaaaaaaaaaaaaaaaaaa press enter')
+    
     image_data, qpos_data, action_data, is_pad = image_data.cuda(), qpos_data.cuda(), action_data.cuda(), is_pad.cuda()
-    return policy(qpos_data, image_data, action_data, is_pad) 
+    for key in lang_data.keys():
+        lang_data[key] = lang_data[key].cuda()
+    return policy(qpos_data, image_data, lang_data, action_data, is_pad) 
 
 def train_bc(train_dataloader, val_dataloader, config):
     num_epochs = config['num_epochs']
@@ -271,9 +285,10 @@ if __name__ == '__main__':
     parser.add_argument('--lr', action='store', type=float, help='lr', required=True)
     parser.add_argument('--qpos_noise_std', action='store', default=0, type=float, help='lr', required=False)
 
-    parser.add_argument('--backbone', action='store', type=str, default='resnet18', help='visual backbone, choose from resnet18, resnet34, dino_v2', required=False)
-    parser.add_argument('--state_dim', action='store', type=int, default=13, help='state_dim', required=False)
-    parser.add_argument('--action_dim', action='store', type=int, default=13, help='action_dim', required=False)
+    parser.add_argument('--backbone', action='store', type=str, default='resnet18', help='visual backbone, choose from resnet18, resnet34, dino_v2, CLIP', required=False)
+    parser.add_argument('--lang-backbone', action='store', type=str, default='CLIP', help='language backbone, choose from CLIP, onehot', required=False)
+    parser.add_argument('--state_dim', action='store', type=int, default=7, help='state_dim', required=False)
+    parser.add_argument('--action_dim', action='store', type=int, default=12, help='action_dim', required=False)
     
     # for ACT
     parser.add_argument('--kl_weight', action='store', type=int, help='KL Weight', required=False)
@@ -287,7 +302,7 @@ if __name__ == '__main__':
     parser.add_argument('--resume_ckpt', action='store', default="", type=str, help='resume ckpt', required=False)
     parser.add_argument('--task-name', action='store', type=str, help='task name', required=True)
     parser.add_argument('--exptid', action='store', type=str, help='experiment id', required=True)
-    parser.add_argument('--dataset-path', action='store', type=str, help='path_to_hdf5_dataset', required=True)
+    parser.add_argument('--config-path', action='store', type=str, help='path_to_config_of_datasets', required=True)
     
     parser.add_argument('--saving-interval', action='store', type=int, default=10000, help='saving interval', required=False)
     args = vars(parser.parse_args())

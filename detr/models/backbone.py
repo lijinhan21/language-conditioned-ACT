@@ -10,6 +10,7 @@ import torchvision
 from torch import nn
 from torchvision.models._utils import IntermediateLayerGetter
 from typing import Dict, List
+from transformers import CLIPModel, CLIPTokenizer
 
 from util.misc import NestedTensor, is_main_process
 
@@ -109,6 +110,42 @@ class DINOv2BackBone(nn.Module):
         od["0"] = xs.reshape(xs.shape[0], 16, 16, 384).permute(0, 3, 2, 1) # Note: hard-coded for 16x16 patches
         return od
     
+class CLIPBackBone(nn.Module):
+    def __init__(self, model_name: str = "openai/clip-vit-base-patch32") -> None:
+        super().__init__()
+        self.body = CLIPModel.from_pretrained(model_name)
+        self.tokenizer = CLIPTokenizer.from_pretrained(model_name)
+        self.body.eval()
+    
+    @torch.no_grad()
+    def forward(self, tokenized_inputs):
+        """
+        Input: text_inputs (list[str]) - 文本列表
+        Output: OrderedDict 包含文本特征的编码
+        """
+        # tokenized_inputs = self.tokenizer(
+        #     text_inputs, 
+        #     padding=True, 
+        #     truncation=True, 
+        #     return_tensors="pt"
+        # )
+        
+        if len(tokenized_inputs["input_ids"].shape) == 3:
+            # h, w, d -> hw, d
+            bsz, _, max_len = tokenized_inputs["input_ids"].shape
+            tokenized_inputs["input_ids"] = tokenized_inputs["input_ids"].reshape(-1, max_len)
+            tokenized_inputs["attention_mask"] = tokenized_inputs["attention_mask"].reshape(-1, max_len)
+        
+        text_features = self.body.get_text_features(**tokenized_inputs)
+        
+        # text_features = text_features.reshape(bsz, -1, text_features.shape[-1])
+        
+        od = OrderedDict()
+        od["text_features"] = text_features
+        
+        return od
+
+    
 class Joiner(nn.Sequential):
     def __init__(self, backbone, position_embedding):
         super().__init__(backbone, position_embedding)
@@ -128,7 +165,17 @@ class Joiner(nn.Sequential):
             pos.append(self[1](x).to(x.dtype))
 
         return out, pos
+    
+def build_lang_backbone(args):
+    train_backbone = False
+    return_interm_layers = args.masks
 
+    if args.lang_backbone == 'CLIP':
+        backbone = CLIPBackBone()
+    else:
+        raise NotImplementedError
+    
+    return backbone
 
 def build_backbone(args):
     position_embedding = build_position_encoding(args)
