@@ -8,15 +8,17 @@ from copy import deepcopy
 from tqdm import tqdm
 from einops import rearrange
 
+import init_path
+
 # from .constants import DT
 # from .constants import PUPPET_GRIPPER_JOINT_OPEN
-from utils import load_data # data functions
-from utils import compute_dict_mean, set_seed, detach_dict, parse_id, find_all_ckpt # helper functions
-from policy import ACTPolicy, CNNMLPPolicy
+from act.utils import load_data # data functions
+from act.utils import compute_dict_mean, set_seed, detach_dict, parse_id, find_all_ckpt # helper functions
+from act.policy import ACTPolicy, CNNMLPPolicy
 # from .visualize_episodes import save_videos
 import wandb
 
-import init_path
+
 import yaml
 
 # from sim_env import BOX_POSE

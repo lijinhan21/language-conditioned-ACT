@@ -9,6 +9,13 @@ class CLIPTextEmbedding:
         self.model = CLIPModel.from_pretrained(model_name).to(self.device)
         # self.processor = CLIPProcessor.from_pretrained(model_name)
         self.processor = CLIPTokenizer.from_pretrained(model_name)
+        
+        local_model_path = "/home/zhaoyixiu/ISR_project/CLIP"
+        self.model.save_pretrained(local_model_path + '/model')
+        self.processor.save_pretrained(local_model_path + '/tokenizer')
+        
+        print("save model ok!")
+        
         self.model.eval()
         
     def encode_text(self, text: Union[str, List[str]], normalize: bool = True) -> np.ndarray:
@@ -17,16 +24,14 @@ class CLIPTextEmbedding:
             
         with torch.no_grad():
             inputs = self.processor(text=text, return_tensors="pt", padding=True)
-            # text_features = self.model.get_text_features(**{k: v.to(self.device) for k, v in inputs.items()})
-            inputs = {k: v.to(self.device) for k, v in inputs.items()}
+            text_features = self.model.get_text_features(**{k: v.to(self.device) for k, v in inputs.items()})
+            # inputs = {k: v.to(self.device) for k, v in inputs.items()}
             
-            print("shapef of inputs: ", inputs['input_ids'].shape, inputs['attention_mask'].shape)
-            inputs["input_ids"] = inputs["input_ids"].unsqueeze(0)
-            inputs['attention_mask'] = inputs["attention_mask"].unsqueeze(0)
+            # print("shapef of inputs: ", inputs['input_ids'].shape, inputs['attention_mask'].shape)
+            # inputs["input_ids"] = inputs["input_ids"].unsqueeze(0)
+            # inputs['attention_mask'] = inputs["attention_mask"].unsqueeze(0)
             
-            
-            
-            text_features = self.model.get_text_features(**inputs)
+            # text_features = self.model.get_text_features(**inputs)
             
             if normalize:
                 text_features = text_features / text_features.norm(dim=1, keepdim=True)

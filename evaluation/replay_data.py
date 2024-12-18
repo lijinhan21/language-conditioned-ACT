@@ -2,104 +2,90 @@ import math
 import numpy as np
 import matplotlib.pyplot as plt
 import os
-from pytransform3d import rotations
 
 from pathlib import Path
 import h5py
 from tqdm import tqdm
 import time
 import cv2
+import json
 
 import torch
 from einops import rearrange
 
-import robosuite as suite
-from robosuite import load_controller_config
-from robosuite.utils.okami_utils import joint_pos_controller, urdf_to_robosuite_cmds, obs_to_urdf
+import init_path
+from act.utils import KaedeVideoWriter, make_grid
 
-from utils import joint_state_13_to_56, joint_state_26_to_56, name_to_urdf_idx, name_to_limits, KaedeVideoWriter, make_grid
+import robosuite
+from robocasa.utils.dataset_registry import (
+    get_ds_path,
+    SINGLE_STAGE_TASK_DATASETS,
+    MULTI_STAGE_TASK_DATASETS,
+)
 
 from pathlib import Path
 current_dir = Path(__file__).parent.resolve()
 
-class Player:
-    def __init__(self, single_arm=True, horizon=300):
-        
-        self.single_arm = single_arm
-        if self.single_arm:
-            env_name = "HumanoidPour"
-        else:
-            env_name = "HumanoidIce"
-        env_name = "HumanoidEmpty"
-        
-        # Get controller config
-        controller_config = load_controller_config(default_controller="JOINT_POSITION")
-        controller_config["kp"] = 500
-        
-        # Create argument configuration
-        config = {
-            "env_name": env_name,
-            "robots": "GR1FloatingBody",
-            "controller_configs": controller_config,
-        }
+def get_env_metadata_from_dataset(dataset_path, ds_format="robomimic"):
+    """
+    Retrieves env metadata from dataset.
 
-        # Create environment
-        self.env = suite.make(
-            **config,
-            renderer="mujoco",
-            has_offscreen_renderer=True,
-            ignore_done=False,
-            horizon=horizon,
-            use_camera_obs=True,
-            camera_names=["agentview", "robot0_robotview", "frontview"],
-            camera_heights=720,
-            camera_widths=1280,
-            camera_depths=True,
-            control_freq=20,
-        )
-        print("Simulation environment initialized")
+    Args:
+        dataset_path (str): path to dataset
+
+    Returns:
+        env_meta (dict): environment metadata. Contains 3 keys:
+
+            :`'env_name'`: name of environment
+            :`'type'`: type of environment, should be a value in EB.EnvType
+            :`'env_kwargs'`: dictionary of keyword arguments to pass to environment constructor
+    """
+    dataset_path = os.path.expanduser(dataset_path)
+    f = h5py.File(dataset_path, "r")
+    if ds_format == "robomimic":
+        env_meta = json.loads(f["data"].attrs["env_args"])
+        ep_meta_dict = json.loads(f["data"]["demo_1"].attrs['ep_meta'])
+        env_meta['lang'] = ep_meta_dict['lang']
+    else:
+        raise ValueError
+    f.close()
+    return env_meta
+
+class Player:
+    def __init__(self, dataset):
+        
+        env_meta = get_env_metadata_from_dataset(dataset_path=dataset)
+        env_kwargs = env_meta["env_kwargs"]
+        env_kwargs["env_name"] = env_meta["env_name"]
+        env_kwargs["has_renderer"] = False
+        env_kwargs["renderer"] = "mjviewer"
+        env_kwargs["has_offscreen_renderer"] = True
+        env_kwargs["use_camera_obs"] = False
+
+        self.env = robosuite.make(**env_kwargs)
         
         self.reset()
-    
+        
+        # import pdb; pdb.set_trace()
+        
     def get_state_and_images(self):
-        joint_states_urdf = obs_to_urdf(self.obs) # shape (56,)
-        right_idx = [25, 26, 27, 28, 29, 30, 31, 32, 33, 36, 38, 40, 42]
-        left_idx = [6, 7, 8, 9, 10, 11, 12, 13, 14, 17, 19, 21, 23]
-        if self.single_arm:
-            joint_states =  joint_states_urdf[right_idx] # shape (13,)
-        else:
-            all_arms_idx = left_idx + right_idx
-            joint_states = joint_states_urdf[all_arms_idx] # shape (26,)
         
-        rgb_img = self.obs["robot0_robotview_image"]
-        rgb_img = cv2.flip(rgb_img, 0)
-        rgb_img = cv2.cvtColor(rgb_img, cv2.COLOR_RGB2BGR)
+        cos_joint = self.obs['robot0_joint_pos_cos']
+        sin_joint = self.obs['robot0_joint_pos_sin']
+        joint_states = np.arctan2(sin_joint, cos_joint)
         
-        rgb_img = cv2.resize(rgb_img, (224, 224), interpolation=cv2.INTER_AREA)
+        cam_name = 'robot0_agentview_left'
+        rgb_img = self.env.sim.render(height=128, width=128, camera_name=cam_name)[::-1]
         
-        return joint_states, rgb_img
+        return joint_states, self.lang, rgb_img
     
-    def step(self, action, agentview_rgb):
+    def step(self, action):
         
-        if self.single_arm:
-            assert len(action) == 13
-            urdf_q = joint_state_13_to_56(action)
-        else:
-            assert len(action) == 26
-            urdf_q = joint_state_26_to_56(action)
+        self.obs, reward, done, info = self.env.step(action)
         
-        for j, (name, idx) in enumerate(name_to_urdf_idx.items()):
-            limits = name_to_limits[name]
-            # clip between limits
-            urdf_q[idx] = max(limits[0], min(urdf_q[idx], limits[1]))
-            
-        target_joint_pos = urdf_to_robosuite_cmds(urdf_q)
-        mujoco_action = joint_pos_controller(self.obs, target_joint_pos)
-        
-        self.obs, reward, done, info = self.env.step(mujoco_action)
-        
-        frame = self.obs['frontview_image']
-        frame = cv2.flip(frame, 0)
+        cam_name = 'robot0_agentview_left'
+        frame = self.env.sim.render(height=512, width=512, camera_name=cam_name)[::-1]
+        # frame = cv2.flip(frame, 0)
         frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
         self.episode_recording.append(frame)
         
@@ -128,8 +114,14 @@ class Player:
     def reset(self):
         self.obs = self.env.reset()
         self.episode_recording = []
+        
+        ep_meta = self.env.get_ep_meta()
+        self.lang = ep_meta.get("lang", None)
+        
         time.sleep(3)
-        print("start new episode!")
+        print("start new episode!", self.lang)
+        
+        
         
     def get_episode_recording(self):
         return self.episode_recording

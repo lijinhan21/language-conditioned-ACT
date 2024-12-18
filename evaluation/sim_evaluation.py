@@ -2,7 +2,7 @@ import math
 import numpy as np
 import matplotlib.pyplot as plt
 
-from replay_data import Player
+from transformers import CLIPModel, CLIPTokenizer
 
 from pathlib import Path
 import h5py
@@ -20,9 +20,11 @@ from einops import rearrange
 
 from pathlib import Path
 current_dir = Path(__file__).parent.resolve()
-LOG_DIR = (current_dir / 'logs/').resolve()
+LOG_DIR = (current_dir / '../act/logs/').resolve()
 
-from ISR_project.ACT.act.imitate_episodes import make_policy, load_ckpt, make_config
+import init_path
+from act.imitate_episodes import make_policy, load_ckpt, make_config
+from evaluation.replay_data import Player
 
 def get_norm_stats(data_path):
     with open(data_path, "rb") as f:
@@ -45,18 +47,30 @@ def load_policy(config):
     
     return policy
 
-def normalize_input(state, agentview_rgb, norm_stats, last_action_data=None):
+def normalize_input(state, lang, agentview_rgb, norm_stats, CLIP_tokenizer):
+    
     agentview_rgb = rearrange(agentview_rgb, 'h w c -> c h w')
     image_data = torch.from_numpy(np.stack([agentview_rgb], axis=0)) / 255.0
     qpos_data = (torch.from_numpy(state) - norm_stats["qpos_mean"]) / norm_stats["qpos_std"]
-    image_data = image_data.view((1, 1, 3, 224, 224)).float().to(device='cuda')
+    image_data = image_data.view((1, 1, 3, 128, 128)).float().to(device='cuda') 
+    
     state_dim = len(norm_stats["qpos_mean"])
-    qpos_data = qpos_data.view((1, state_dim)).float().to(device='cuda') # TODO: change 13 to state_dim
+    qpos_data = qpos_data.view((1, state_dim)).float().to(device='cuda')
 
-    if last_action_data is not None:
-        last_action_data = torch.from_numpy(last_action_data).to(device='cuda').view((1, -1)).to(torch.float)
-        qpos_data = torch.cat((qpos_data, last_action_data), dim=1)
-    return (qpos_data, image_data)
+    lang_data = CLIP_tokenizer(
+            lang, 
+            padding='max_length', 
+            truncation=True, 
+            max_length=25,
+            return_tensors="pt"
+    )
+    for key in lang_data.keys():
+        lang_data[key] = lang_data[key].cuda()
+    
+    # print("shapes:", qpos_data.shape, image_data.shape)
+    # print("lang_tokens", lang_data)
+    
+    return (qpos_data, image_data, lang_data) 
 
 
 def merge_act(actions_for_curr_step, k = 0.01):
@@ -81,8 +95,9 @@ if __name__ == '__main__':
     parser.add_argument('--qpos_noise_std', action='store', default=0, type=float, help='lr', required=False)
 
     parser.add_argument('--backbone', action='store', type=str, default='resnet18', help='visual backbone, choose from resnet18, resnet34, dino_v2, CLIP', required=False)
-    parser.add_argument('--state_dim', action='store', type=int, default=13, help='state_dim', required=False)
-    parser.add_argument('--action_dim', action='store', type=int, default=13, help='action_dim', required=False)
+    parser.add_argument('--lang-backbone', action='store', type=str, default='CLIP', help='language backbone, choose from CLIP, onehot', required=False)
+    parser.add_argument('--state_dim', action='store', type=int, default=7, help='state_dim', required=False)
+    parser.add_argument('--action_dim', action='store', type=int, default=12, help='action_dim', required=False)
     
     # for ACT
     parser.add_argument('--kl_weight', action='store', type=int, help='KL Weight', required=False)
@@ -93,14 +108,16 @@ if __name__ == '__main__':
     parser.add_argument('--save_jit', action='store_true')
     parser.add_argument('--no_wandb', action='store_true')
     parser.add_argument('--resumeid', action='store', default="", type=str, help='resume id', required=False)
-    parser.add_argument('--resume_ckpt', action='store', type=str, help='resume ckpt', required=True)
+    parser.add_argument('--resume_ckpt', action='store', default="", type=str, help='resume ckpt', required=False)
     parser.add_argument('--task-name', action='store', type=str, help='task name', required=True)
     parser.add_argument('--exptid', action='store', type=str, help='experiment id', required=True)
-    parser.add_argument('--dataset-path', action='store', type=str, help='path_to_hdf5_dataset', required=True)
+    parser.add_argument('--config-path', action='store', type=str, help='path_to_config_of_datasets', required=True)
     
-    parser.add_argument('--saving-interval', action='store', type=int, default=5000, help='saving interval', required=False)
+    parser.add_argument('--saving-interval', action='store', type=int, default=10000, help='saving interval', required=False)
     args = vars(parser.parse_args())
-
+    
+    print(f"LOG dir: {LOG_DIR}\n")
+    
     config = make_config(args)
     
     ckpt_dir = config['ckpt_dir']
@@ -112,7 +129,7 @@ if __name__ == '__main__':
     chunk_size = args['chunk_size']
     device = "cuda"
     
-    timestamps = 300 # max length of an episode
+    timestamps = 100 # max length of an episode
 
     norm_stats = get_norm_stats(norm_stat_path)
     policy = load_policy(config)
@@ -124,9 +141,13 @@ if __name__ == '__main__':
     last_action_data = None
     
     # ---
-    
-    single_arm = (action_dim == 13)
-    player = Player(single_arm)
+    dataset_config = yaml.safe_load(open(args['config_path'], 'r'))
+    dataset_paths = dataset_config['dataset_paths']
+    player = Player(dataset_paths[0])
+
+    model_name = "openai/clip-vit-base-patch32"
+    cache_name = "/home/zhaoyixiu/ISR_project/CLIP/tokenizer"
+    CLIP_tokenizer = CLIPTokenizer.from_pretrained(model_name)
 
     if temporal_agg:
         all_time_actions = np.zeros([timestamps, timestamps+chunk_size, action_dim])
@@ -137,7 +158,7 @@ if __name__ == '__main__':
         output = None
         act_index = 0
         
-        num_episodes = 16
+        num_episodes = 1
         success_count = 0
         video_out = []
         for episode_idx in range(num_episodes):
@@ -147,8 +168,8 @@ if __name__ == '__main__':
                 if history_stack > 0:
                     last_action_data = np.array(last_action_queue)
 
-                state, agentview_rgb = player.get_state_and_images()
-                data = normalize_input(state, agentview_rgb, norm_stats, last_action_data)
+                state, lang, agentview_rgb = player.get_state_and_images()
+                data = normalize_input(state, lang, agentview_rgb, norm_stats, CLIP_tokenizer)
 
                 if temporal_agg:
                     output = policy(*data)[0].detach().cpu().numpy() # (1,chuck_size,action_dim)
@@ -165,7 +186,7 @@ if __name__ == '__main__':
                 if history_stack > 0:
                     last_action_queue.append(act)
                 act = act * norm_stats["action_std"] + norm_stats["action_mean"]
-                reward, done = player.step(act, agentview_rgb)
+                reward, done = player.step(act)
                 if done:
                     if reward > 0:
                         print("Success!")

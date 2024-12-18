@@ -39,7 +39,8 @@ class EpisodicDataset(torch.utils.data.Dataset):
         self.actions = []
         self.language_instructions = []
         
-        self.CLIP_tokenizer = CLIPTokenizer.from_pretrained("openai/clip-vit-base-patch32")
+        # model_name = "openai/clip-vit-base-patch32"
+        self.CLIP_tokenizer = CLIPTokenizer.from_pretrained("/home/zhaoyixiu/ISR_project/CLIP/tokenizer")
 
         # Read in all the data
         for idx, (dataset_path, lan_ins) in enumerate(zip(dataset_paths, lan_instructions)):
@@ -67,6 +68,7 @@ class EpisodicDataset(torch.utils.data.Dataset):
                         
                     # print("shape of state", self.states[-1].shape) # 7
                     # print("shape of actions", self.actions[-1].shape) # 12
+                    # print("shape of imgs", self.image_dict[self.camera_names[0]][-1].shape) # 3, 128, 128
 
         # shuffle the data according to episode_ids
         self.states = [self.states[i] for i in self.episode_ids]

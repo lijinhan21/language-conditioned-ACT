@@ -3,10 +3,17 @@
 
 ## Dev:
 
+Training:
+
 ```
 python act/imitate_episodes.py --policy_class ACT --kl_weight 10 --chunk_size 60 --hidden_dim 512 --batch_size 45 --dim_feedforward 3200 --num_epochs 50000 --lr 5e-5 --seed 0 --task-name test --exptid 01-test --config-path config/data2.yml
 ```
 
+Evaluation:
+
+```
+python sim_evaluation.py --policy_class ACT --kl_weight 10 --chunk_size 60 --hidden_dim 512 --batch_size 45 --dim_feedforward 3200 --num_epochs 50000 --lr 5e-5 --seed 0 --task-name test --exptid 01-test --config-path config/data2.yml --resume_ckpt 40000
+```
 
 ## Installation
 
