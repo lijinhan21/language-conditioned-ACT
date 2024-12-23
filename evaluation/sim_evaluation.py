@@ -167,7 +167,7 @@ if __name__ == '__main__':
             output = None
             act_index = 0
             
-            num_episodes = 16
+            num_episodes = 4
             success_count = 0
             video_out = []
             for episode_idx in range(num_episodes):

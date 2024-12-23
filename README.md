@@ -16,7 +16,10 @@ python act/imitate_episodes.py --policy_class ACT --kl_weight 10 --chunk_size 60
 
 python act/imitate_episodes.py --policy_class ACT --kl_weight 10 --chunk_size 60 --hidden_dim 512 --batch_size 45 --dim_feedforward 3200 --num_epochs 80000 --lr 5e-5 --seed 0 --task-name libero3 --exptid first-three-tasks --config-path config/data_libero_3.yml
 
-python act/imitate_episodes.py --policy_class ACT --kl_weight 10 --chunk_size 60 --hidden_dim 512 --batch_size 45 --dim_feedforward 3200 --num_epochs 80000 --lr 5e-5 --seed 0 --task-name libero3 --exptid first-three-tasks-onehot --config-path config/data_libero_3.yml --lang-backbone OneHot
+[running: onehot, 3 tasks] python act/imitate_episodes.py --policy_class ACT --kl_weight 10 --chunk_size 60 --hidden_dim 512 --batch_size 45 --dim_feedforward 3200 --num_epochs 80000 --lr 5e-5 --seed 0 --task-name libero3-revise --exptid first-three-tasks-onehot --config-path config/data_libero_3.yml --lang-backbone OneHot
+
+[running: CLIP, 10 tasks]
+CUDA_VISIBLE_DEVICES=1 python act/imitate_episodes.py --policy_class ACT --kl_weight 10 --chunk_size 60 --hidden_dim 512 --batch_size 45 --dim_feedforward 3200 --num_epochs 250000 --lr 5e-5 --seed 0 --task-name libero3 --exptid ten-tasks --config-path config/data_libero_10.yml
 ```
 
 Evaluation:
@@ -29,6 +32,8 @@ python evaluation/sim_evaluation.py --policy_class ACT --kl_weight 10 --chunk_si
 python evaluation/sim_evaluation.py --policy_class ACT --kl_weight 10 --chunk_size 60 --hidden_dim 512 --batch_size 45 --dim_feedforward 3200 --num_epochs 50000 --lr 5e-5 --seed 0 --task-name libero1 --exptid open-middle-drawer --config-path config/data_libero_1.yml --resume_ckpt 10000
 
 CUDA_VISIBLE_DEVICES=2 python evaluation/sim_evaluation.py --policy_class ACT --kl_weight 10 --chunk_size 60 --hidden_dim 512 --batch_size 45 --dim_feedforward 3200 --num_epochs 80000 --lr 5e-5 --seed 0 --task-name libero3 --exptid first-three-tasks --config-path config/data_libero_3.yml --resume_ckpt 40000
+
+CUDA_VISIBLE_DEVICES=2 python evaluation/sim_evaluation.py --policy_class ACT --kl_weight 10 --chunk_size 60 --hidden_dim 512 --batch_size 45 --dim_feedforward 3200 --num_epochs 80000 --lr 5e-5 --seed 0 --task-name libero3-revise --exptid first-three-tasks-onehot --config-path config/data_libero_3.yml --lang-backbone OneHot --resume_ckpt 10000
 ```
 
 ## Installation

@@ -117,16 +117,16 @@ class OneHotBackBone(nn.Module):
         
         # 预定义所有可能的语言指令
         self.all_possible_lang = [
-            "open_the_middle_drawer_of_the_cabinet",
-            "put_the_bowl_on_the_stove",
-            "put_the_wine_bottle_on_top_of_the_cabinet",
-            "open_the_top_drawer_and_put_the_bowl_inside",
-            "put_the_bowl_on_top_of_the_cabinet",
-            "push_the_plate_to_the_front_of_the_stove",
-            "put_the_cream_cheese_in_the_bowl",
-            "turn_on_the_stove",
-            "put_the_bowl_on_the_plate",
-            "put_the_wine_bottle_on_the_rack",
+            "open the middle drawer of the cabinet",
+            "put the bowl on the stove",
+            "put the wine bottle on top of the cabinet",
+            "open the top drawer and put the bowl inside",
+            "put the bowl on top of the cabinet",
+            "push the plate to the front of the stove",
+            "put the cream cheese in the bowl",
+            "turn on the stove",
+            "put the bowl on the plate",
+            "put the wine bottle on the rack",
         ]
         
         # 为每个语言创建对应的 index
@@ -154,6 +154,12 @@ class OneHotBackBone(nn.Module):
         
         for lang, (stored_ids, stored_mask) in self.lang_token_ids.items():
             stored_length = stored_mask.sum().item()
+            
+            # print("lang=", lang)
+            # print("valid_length=", valid_length, "stored_length=", stored_length)
+            # print("input_tokens=", input_tokens)
+            # print("stored_ids=", stored_ids[:valid_length])
+            
             if valid_length == stored_length and torch.all(input_tokens == stored_ids[:valid_length]):
                 return lang
         return None
@@ -177,9 +183,12 @@ class OneHotBackBone(nn.Module):
                 tokenized_inputs["input_ids"][i],
                 tokenized_inputs["attention_mask"][i]
             )
+            # print("lang=", lang)
             if lang is not None:
                 idx = self.lang_to_index[lang]
                 text_features[i, idx] = 1.0
+                
+        # print("feature 0:", text_features[0][:10])
         
         od = OrderedDict()
         od["text_features"] = text_features
