@@ -34,7 +34,71 @@ python evaluation/sim_evaluation.py --policy_class ACT --kl_weight 10 --chunk_si
 CUDA_VISIBLE_DEVICES=2 python evaluation/sim_evaluation.py --policy_class ACT --kl_weight 10 --chunk_size 60 --hidden_dim 512 --batch_size 45 --dim_feedforward 3200 --num_epochs 80000 --lr 5e-5 --seed 0 --task-name libero3 --exptid first-three-tasks --config-path config/data_libero_3.yml --resume_ckpt 40000
 
 CUDA_VISIBLE_DEVICES=2 python evaluation/sim_evaluation.py --policy_class ACT --kl_weight 10 --chunk_size 60 --hidden_dim 512 --batch_size 45 --dim_feedforward 3200 --num_epochs 80000 --lr 5e-5 --seed 0 --task-name libero3-revise --exptid first-three-tasks-onehot --config-path config/data_libero_3.yml --lang-backbone OneHot --resume_ckpt 10000
+
+
+CUDA_VISIBLE_DEVICES=1 python evaluation/sim_evaluation.py --policy_class ACT --kl_weight 10 --chunk_size 60 --hidden_dim 512 --batch_size 45 --dim_feedforward 3200 --num_epochs 80000 --lr 5e-5 --seed 0 --task-name libero3-revise --exptid first-three-tasks-onehot --config-path config/data_libero_3.yml --lang-backbone OneHot --resume_ckpt 10000
 ```
+
+### TODOs
+
+- [ ] Finish training all multi-task policies (4 in total).
+    - [x] CLIP 3 tasks.
+    - [ ] CLIP 10 tasks. (Running)
+    - [ ] OneHot 3 tasks. (Running)
+    - [ ] OneHot 10 tasks.
+
+- [ ] Implement parallel evaluation (multiple environments at a time).
+
+- [ ] Finish the evaluation of all multi-task policies.
+    - [x] CLIP 3 tasks.
+    - [ ] CLIP 10 tasks.
+    - [ ] OneHot 3 tasks.
+    - [ ] OneHot 10 tasks.
+
+- [ ] Implement a new task in the given environment: e.g. open the upper drawer; open the middle drawer and put the bowl in.
+
+- [ ] Evaluate on new tasks.
+
+- [ ] Implement random embedding during testing.
+
+- [ ] Finish training selective single-task policy.
+
+### Experiment Plan:
+
+**Comparison between CLIP embedding and one-hot vectors on seen tasks**
+
+Single-task policy:
+
+| | T1 | T2 | T3 | T4 | T5 | T6 | T7 | T8 | T9 | T10 |
+| ----- | ----- | ----- | ----- | ----- | ----- | ----- | ----- | ----- | ----- | ----- |
+|CLIP| | | | | | | | | | |
+|OneHot| | | | | | | | | | |
+|CLIP-randemb| | | | | | | | | | |
+|OneHot-randemb| | | | | | | | | | |
+
+3 tasks (data_libero_3.yml) :
+
+|  | Task 1 | Task2 | Task3 |
+| ----- | ----- | ----- | ----- |
+| CLIP | 93.75% | 50% | 56.25% |
+| OneHot | Training |  | |
+| CLIP-randemb |  |  |  |
+| OneHot-randemb |  |  | |
+
+10 tasks (data_libero_10.yml):
+
+| | T1 | T2 | T3 | T4 | T5 | T6 | T7 | T8 | T9 | T10 |
+| ----- | ----- | ----- | ----- | ----- | ----- | ----- | ----- | ----- | ----- | ----- |
+|CLIP| Training | | | | | | | | | |
+|OneHot| | | | | | | | | | |
+|CLIP-randemb| | | | | | | | | | |
+|OneHot-randemb| | | | | | | | | | |
+
+**Test CLIP and one-hot on unseen task**
+
+| | CLIP-1 | CLIP-3 | CLIP-10 | OneHot-1 | OneHot-3 | OneHot-10 |
+| ----- | ----- | ----- | ----- | ----- | ----- | ----- |
+|New Task 1| | | | | | |
 
 ## Installation
 
