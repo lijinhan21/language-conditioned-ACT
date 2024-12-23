@@ -62,6 +62,7 @@ class Player:
             if descriptions[i] == data_desc:
                 task_id = i
                 break
+        print("task_id=", task_id)
         
         task = benchmark_instance.get_task(task_id)
         bddl_file = os.path.join(bddl_folder, task.problem_folder, task.bddl_file)

@@ -145,64 +145,75 @@ if __name__ == '__main__':
     # ---
     dataset_config = yaml.safe_load(open(args['config_path'], 'r'))
     dataset_paths = dataset_config['dataset_paths']
-    player = Player(dataset_paths[0])
 
     model_name = "openai/clip-vit-base-patch32"
     cache_name = "/home/zhaoyixiu/ISR_project/CLIP/tokenizer"
     CLIP_tokenizer = CLIPTokenizer.from_pretrained(cache_name)
 
-    if temporal_agg:
-        all_time_actions = np.zeros([timestamps, timestamps+chunk_size, action_dim])
-    else:
-        num_actions_exe = chunk_size
+    num_tasks = len(dataset_paths)
+    all_tasks_success_rates = []
     
-    try:
-        output = None
-        act_index = 0
+    for task_idx in range(num_tasks):
+
+        print("start evaluating task ", task_idx + 1, "/", num_tasks)
+        player = Player(dataset_paths[task_idx])
+
+        if temporal_agg:
+            all_time_actions = np.zeros([timestamps, timestamps+chunk_size, action_dim])
+        else:
+            num_actions_exe = chunk_size
         
-        num_episodes = 10
-        success_count = 0
-        video_out = []
-        for episode_idx in range(num_episodes):
-            print("Episode", episode_idx)
+        try:
+            output = None
+            act_index = 0
             
-            for t in tqdm(range(timestamps)):
-                if history_stack > 0:
-                    last_action_data = np.array(last_action_queue)
+            num_episodes = 4
+            success_count = 0
+            video_out = []
+            for episode_idx in range(num_episodes):
+                print("Episode", episode_idx)
+                
+                for t in tqdm(range(timestamps)):
+                    if history_stack > 0:
+                        last_action_data = np.array(last_action_queue)
 
-                state, lang, images = player.get_state_and_images()
-                data = normalize_input(state, lang, images, norm_stats, CLIP_tokenizer)
+                    state, lang, images = player.get_state_and_images()
+                    data = normalize_input(state, lang, images, norm_stats, CLIP_tokenizer)
 
-                if temporal_agg:
-                    output = policy(*data)[0].detach().cpu().numpy() # (1,chuck_size,action_dim)
-                    all_time_actions[[t], t:t+chunk_size] = output
-                    act = merge_act(all_time_actions[:, t])
-                else:
-                    if output is None or act_index == num_actions_exe-1:
-                        print("Inference...")
-                        output = policy(*data)[0].detach().cpu().numpy()
-                        act_index = 0
-                    act = output[act_index]
-                    act_index += 1
-                # import ipdb; ipdb.set_trace()
-                if history_stack > 0:
-                    last_action_queue.append(act)
-                act = act * norm_stats["action_std"] + norm_stats["action_mean"]
-                reward, done = player.step(act)
-                if done:
-                    if reward > 0:
-                        print("Success!")
-                        success_count += 1
+                    if temporal_agg:
+                        output = policy(*data)[0].detach().cpu().numpy() # (1,chuck_size,action_dim)
+                        all_time_actions[[t], t:t+chunk_size] = output
+                        act = merge_act(all_time_actions[:, t])
                     else:
-                        print("Failed!")
-                    break
+                        if output is None or act_index == num_actions_exe-1:
+                            print("Inference...")
+                            output = policy(*data)[0].detach().cpu().numpy()
+                            act_index = 0
+                        act = output[act_index]
+                        act_index += 1
+                    # import ipdb; ipdb.set_trace()
+                    if history_stack > 0:
+                        last_action_queue.append(act)
+                    act = act * norm_stats["action_std"] + norm_stats["action_mean"]
+                    reward, done = player.step(act)
+                    if done:
+                        if reward > 0:
+                            print("Success!")
+                            success_count += 1
+                        else:
+                            print("Failed!")
+                        break
+                
+                video_out.append(player.get_episode_recording())
+                player.reset()
             
-            video_out.append(player.get_episode_recording())
-            player.reset()
+            print("Success rate:", success_count / num_episodes)
+            all_tasks_success_rates.append(success_count / num_episodes)
+            
+            player.render_multiple_episode_video(video_out, current_dir, f"{config['task_name']}_{config['exptid']}_eval_{config['resume_ckpt']}_task_{task_idx}.mp4")
         
-        print("Success rate:", success_count / num_episodes)
-        player.render_multiple_episode_video(video_out, current_dir, f"{config['task_name']}_{config['exptid']}_eval_{config['resume_ckpt']}.mp4")
-        
-    except KeyboardInterrupt:
-        player.end()
-        exit()
+        except KeyboardInterrupt:
+            player.end()
+            exit()
+            
+    print("success rate on all tasks:", all_tasks_success_rates)
