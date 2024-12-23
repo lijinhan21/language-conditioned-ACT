@@ -131,7 +131,7 @@ if __name__ == '__main__':
     chunk_size = args['chunk_size']
     device = "cuda"
     
-    timestamps = 200 # max length of an episode
+    timestamps = 250 # max length of an episode
 
     norm_stats = get_norm_stats(norm_stat_path)
     policy = load_policy(config)
@@ -167,7 +167,7 @@ if __name__ == '__main__':
             output = None
             act_index = 0
             
-            num_episodes = 4
+            num_episodes = 16
             success_count = 0
             video_out = []
             for episode_idx in range(num_episodes):

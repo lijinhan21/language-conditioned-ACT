@@ -293,8 +293,8 @@ if __name__ == '__main__':
     parser.add_argument('--lr', action='store', type=float, help='lr', required=True)
     parser.add_argument('--qpos_noise_std', action='store', default=0, type=float, help='lr', required=False)
 
-    parser.add_argument('--backbone', action='store', type=str, default='resnet34', help='visual backbone, choose from resnet18, resnet34, dino_v2, CLIP', required=False)
-    parser.add_argument('--lang-backbone', action='store', type=str, default='CLIP', help='language backbone, choose from CLIP, onehot', required=False)
+    parser.add_argument('--backbone', action='store', type=str, default='resnet34', help='visual backbone, choose from resnet18, resnet34, dino_v2', required=False)
+    parser.add_argument('--lang-backbone', action='store', type=str, default='CLIP', help='language backbone, choose from CLIP, OneHot', required=False)
     parser.add_argument('--state_dim', action='store', type=int, default=7, help='state_dim', required=False)
     parser.add_argument('--action_dim', action='store', type=int, default=7, help='action_dim', required=False)
     

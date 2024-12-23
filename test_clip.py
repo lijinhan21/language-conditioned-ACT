@@ -6,13 +6,16 @@ from typing import Union, List
 class CLIPTextEmbedding:
     def __init__(self, model_name: str = "openai/clip-vit-base-patch32"):
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.model = CLIPModel.from_pretrained(model_name).to(self.device)
-        # self.processor = CLIPProcessor.from_pretrained(model_name)
-        self.processor = CLIPTokenizer.from_pretrained(model_name)
         
         local_model_path = "/home/zhaoyixiu/ISR_project/CLIP"
-        self.model.save_pretrained(local_model_path + '/model')
-        self.processor.save_pretrained(local_model_path + '/tokenizer')
+
+        self.model = CLIPModel.from_pretrained(local_model_path + '/model').to(self.device)
+        # self.processor = CLIPProcessor.from_pretrained(model_name)
+        self.processor = CLIPTokenizer.from_pretrained(local_model_path + '/tokenizer')
+        
+        # local_model_path = "/home/zhaoyixiu/ISR_project/CLIP"
+        # self.model.save_pretrained(local_model_path + '/model')
+        # self.processor.save_pretrained(local_model_path + '/tokenizer')
         
         print("save model ok!")
         
@@ -23,11 +26,17 @@ class CLIPTextEmbedding:
             # text = [text]
             
         with torch.no_grad():
+            
             inputs = self.processor(text=text, return_tensors="pt", padding=True)
+            
+            print(f"Vocabulary size: {self.processor.vocab_size}")
+            print(f"Max token ID in inputs: {inputs.input_ids.max()}")
+            print(f"Min token ID in inputs: {inputs.input_ids.min()}")
+            
             text_features = self.model.get_text_features(**{k: v.to(self.device) for k, v in inputs.items()})
             # inputs = {k: v.to(self.device) for k, v in inputs.items()}
             
-            # print("shapef of inputs: ", inputs['input_ids'].shape, inputs['attention_mask'].shape)
+            print("shapef of inputs: ", inputs['input_ids'].shape, inputs['attention_mask'].shape)
             # inputs["input_ids"] = inputs["input_ids"].unsqueeze(0)
             # inputs['attention_mask'] = inputs["attention_mask"].unsqueeze(0)
             
@@ -35,6 +44,7 @@ class CLIPTextEmbedding:
             
             if normalize:
                 text_features = text_features / text_features.norm(dim=1, keepdim=True)
+            print("shape of text_features:", text_features.shape)
                 
             embeddings = text_features.cpu().numpy()
             

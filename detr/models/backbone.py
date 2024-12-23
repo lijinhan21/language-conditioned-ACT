@@ -109,7 +109,83 @@ class DINOv2BackBone(nn.Module):
         od = OrderedDict()
         od["0"] = xs.reshape(xs.shape[0], 16, 16, 384).permute(0, 3, 2, 1) # Note: hard-coded for 16x16 patches
         return od
+
+class OneHotBackBone(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+        self.output_dim = 512
+        
+        # 预定义所有可能的语言指令
+        self.all_possible_lang = [
+            "open_the_middle_drawer_of_the_cabinet",
+            "put_the_bowl_on_the_stove",
+            "put_the_wine_bottle_on_top_of_the_cabinet",
+            "open_the_top_drawer_and_put_the_bowl_inside",
+            "put_the_bowl_on_top_of_the_cabinet",
+            "push_the_plate_to_the_front_of_the_stove",
+            "put_the_cream_cheese_in_the_bowl",
+            "turn_on_the_stove",
+            "put_the_bowl_on_the_plate",
+            "put_the_wine_bottle_on_the_rack",
+        ]
+        
+        # 为每个语言创建对应的 index
+        self.lang_to_index = {lang: idx for idx, lang in enumerate(self.all_possible_lang)}
+        
+        cache_name = "/home/zhaoyixiu/ISR_project/CLIP/tokenizer"
+        self.tokenizer = CLIPTokenizer.from_pretrained(cache_name)
+        
+        # 预计算每个语言的 token ids
+        self.lang_token_ids = {}
+        for lang in self.all_possible_lang:
+            tokens = self.tokenizer(
+                lang, 
+                padding='max_length', 
+                truncation=True, 
+                max_length=25,
+                return_tensors="pt"
+            )
+            self.lang_token_ids[lang] = (tokens.input_ids[0].cuda(), tokens.attention_mask[0].cuda())
     
+    def _find_matching_lang(self, input_ids, attention_mask):
+        # 对于每个输入的 token 序列，找到匹配的预定义语言
+        valid_length = attention_mask.sum().item()
+        input_tokens = input_ids[:valid_length]
+        
+        for lang, (stored_ids, stored_mask) in self.lang_token_ids.items():
+            stored_length = stored_mask.sum().item()
+            if valid_length == stored_length and torch.all(input_tokens == stored_ids[:valid_length]):
+                return lang
+        return None
+    
+    @torch.no_grad()
+    def forward(self, tokenized_inputs):
+        if len(tokenized_inputs["input_ids"].shape) == 3:
+            bsz, _, max_len = tokenized_inputs["input_ids"].shape
+            tokenized_inputs["input_ids"] = tokenized_inputs["input_ids"].reshape(-1, max_len)
+            tokenized_inputs["attention_mask"] = tokenized_inputs["attention_mask"].reshape(-1, max_len)
+        
+        batch_size = tokenized_inputs["input_ids"].shape[0]
+        device = tokenized_inputs["input_ids"].device
+        
+        # 初始化输出 tensor
+        text_features = torch.zeros((batch_size, self.output_dim), device=device)
+        
+        # 对每个序列生成 one-hot 向量
+        for i in range(batch_size):
+            lang = self._find_matching_lang(
+                tokenized_inputs["input_ids"][i],
+                tokenized_inputs["attention_mask"][i]
+            )
+            if lang is not None:
+                idx = self.lang_to_index[lang]
+                text_features[i, idx] = 1.0
+        
+        od = OrderedDict()
+        od["text_features"] = text_features
+        
+        return od
+
 class CLIPBackBone(nn.Module):
     def __init__(self, model_name: str = "openai/clip-vit-base-patch32") -> None:
         super().__init__()
@@ -176,6 +252,8 @@ def build_lang_backbone(args):
 
     if args.lang_backbone == 'CLIP':
         backbone = CLIPBackBone()
+    elif args.lang_backbone == 'OneHot':
+        backbone = OneHotBackBone()
     else:
         raise NotImplementedError
     
