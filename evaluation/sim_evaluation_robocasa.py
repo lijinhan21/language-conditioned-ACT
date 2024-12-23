@@ -47,16 +47,14 @@ def load_policy(config):
     
     return policy
 
-def normalize_input(state, lang, images, norm_stats, CLIP_tokenizer):
+def normalize_input(state, lang, agentview_rgb, norm_stats, CLIP_tokenizer):
     
-    all_cam_images = []
-    for image in images:
-        all_cam_images.append(rearrange(image, 'h w c -> c h w'))
-    image_data = torch.from_numpy(np.stack([all_cam_images], axis=0)) / 255.0
-    image_data = image_data.view((1, len(all_cam_images), 3, 128, 128)).float().to(device='cuda') 
+    agentview_rgb = rearrange(agentview_rgb, 'h w c -> c h w')
+    image_data = torch.from_numpy(np.stack([agentview_rgb], axis=0)) / 255.0
+    qpos_data = (torch.from_numpy(state) - norm_stats["qpos_mean"]) / norm_stats["qpos_std"]
+    image_data = image_data.view((1, 1, 3, 128, 128)).float().to(device='cuda') 
     
     state_dim = len(norm_stats["qpos_mean"])
-    qpos_data = (torch.from_numpy(state) - norm_stats["qpos_mean"]) / norm_stats["qpos_std"]
     qpos_data = qpos_data.view((1, state_dim)).float().to(device='cuda')
 
     lang_data = CLIP_tokenizer(
@@ -96,10 +94,10 @@ if __name__ == '__main__':
     parser.add_argument('--lr', action='store', type=float, help='lr', required=True)
     parser.add_argument('--qpos_noise_std', action='store', default=0, type=float, help='lr', required=False)
 
-    parser.add_argument('--backbone', action='store', type=str, default='resnet34', help='visual backbone, choose from resnet18, resnet34, dino_v2, CLIP', required=False)
+    parser.add_argument('--backbone', action='store', type=str, default='resnet18', help='visual backbone, choose from resnet18, resnet34, dino_v2, CLIP', required=False)
     parser.add_argument('--lang-backbone', action='store', type=str, default='CLIP', help='language backbone, choose from CLIP, onehot', required=False)
     parser.add_argument('--state_dim', action='store', type=int, default=7, help='state_dim', required=False)
-    parser.add_argument('--action_dim', action='store', type=int, default=7, help='action_dim', required=False)
+    parser.add_argument('--action_dim', action='store', type=int, default=12, help='action_dim', required=False)
     
     # for ACT
     parser.add_argument('--kl_weight', action='store', type=int, help='KL Weight', required=False)
@@ -160,7 +158,7 @@ if __name__ == '__main__':
         output = None
         act_index = 0
         
-        num_episodes = 10
+        num_episodes = 3
         success_count = 0
         video_out = []
         for episode_idx in range(num_episodes):
@@ -170,8 +168,8 @@ if __name__ == '__main__':
                 if history_stack > 0:
                     last_action_data = np.array(last_action_queue)
 
-                state, lang, images = player.get_state_and_images()
-                data = normalize_input(state, lang, images, norm_stats, CLIP_tokenizer)
+                state, lang, agentview_rgb = player.get_state_and_images()
+                data = normalize_input(state, lang, agentview_rgb, norm_stats, CLIP_tokenizer)
 
                 if temporal_agg:
                     output = policy(*data)[0].detach().cpu().numpy() # (1,chuck_size,action_dim)

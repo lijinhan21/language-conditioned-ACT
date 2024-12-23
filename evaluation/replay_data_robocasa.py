@@ -17,89 +17,75 @@ import init_path
 from act.utils import KaedeVideoWriter, make_grid
 
 import robosuite
-
-from pathlib import Path
-
-from libero.libero import get_libero_path, benchmark
-from libero.libero.benchmark import get_benchmark
-from libero.libero.envs import OffScreenRenderEnv, SubprocVectorEnv
-from libero.libero.utils.time_utils import Timer
-from libero.libero.utils.video_utils import VideoWriter
-from libero.lifelong.algos import *
-from libero.lifelong.datasets import get_dataset, SequenceVLDataset, GroupedTaskDataset
-from libero.lifelong.metric import (
-    evaluate_loss,
-    evaluate_success,
-    raw_obs_to_tensor_obs,
-)
-from libero.lifelong.utils import (
-    control_seed,
-    safe_device,
-    torch_load_model,
-    NpEncoder,
-    compute_flops,
+from robocasa.utils.dataset_registry import (
+    get_ds_path,
+    SINGLE_STAGE_TASK_DATASETS,
+    MULTI_STAGE_TASK_DATASETS,
 )
 
 from pathlib import Path
 current_dir = Path(__file__).parent.resolve()
 
+def get_env_metadata_from_dataset(dataset_path, ds_format="robomimic"):
+    """
+    Retrieves env metadata from dataset.
+
+    Args:
+        dataset_path (str): path to dataset
+
+    Returns:
+        env_meta (dict): environment metadata. Contains 3 keys:
+
+            :`'env_name'`: name of environment
+            :`'type'`: type of environment, should be a value in EB.EnvType
+            :`'env_kwargs'`: dictionary of keyword arguments to pass to environment constructor
+    """
+    dataset_path = os.path.expanduser(dataset_path)
+    f = h5py.File(dataset_path, "r")
+    if ds_format == "robomimic":
+        env_meta = json.loads(f["data"].attrs["env_args"])
+        ep_meta_dict = json.loads(f["data"]["demo_1"].attrs['ep_meta'])
+        env_meta['lang'] = ep_meta_dict['lang']
+    else:
+        raise ValueError
+    f.close()
+    return env_meta
+
 class Player:
     def __init__(self, dataset):
+        
+        env_meta = get_env_metadata_from_dataset(dataset_path=dataset)
+        env_kwargs = env_meta["env_kwargs"]
+        env_kwargs["env_name"] = env_meta["env_name"]
+        env_kwargs["has_renderer"] = False
+        env_kwargs["renderer"] = "mjviewer"
+        env_kwargs["has_offscreen_renderer"] = True
+        env_kwargs["use_camera_obs"] = False
 
-        bddl_folder = get_libero_path("bddl_files")
+        self.env = robosuite.make(**env_kwargs)
         
-        data_desc = dataset.split('/')[-1]
-        data_desc = data_desc.replace('_demo.hdf5', '')
-        data_desc = data_desc.replace('_', ' ')
-        
-        benchmark_name = 'libero_goal'
-        benchmark_instance = benchmark.get_benchmark_dict()[benchmark_name]()
-        descriptions = [benchmark_instance.get_task(i).language for i in range(10)]
-        print("descriptions=", descriptions)
-        
-        task_id = -1
-        for i in range(len(descriptions)):
-            if descriptions[i] == data_desc:
-                task_id = i
-                break
-        
-        task = benchmark_instance.get_task(task_id)
-        bddl_file = os.path.join(bddl_folder, task.problem_folder, task.bddl_file)
-        
-        env_args = {
-            "bddl_file_name": bddl_file,
-            "camera_heights": 128,
-            "camera_widths": 128,
-        }
-
-        self.env =  OffScreenRenderEnv(**env_args)
-
-        self.lang = data_desc
-        self.task = task
-        
-        self.init_states = benchmark_instance.get_task_init_states(task_id)
-        self.num_episodes = 0
-        
-        self.reset()        
+        self.reset()
         
         # import pdb; pdb.set_trace()
         
     def get_state_and_images(self):
         
-        joint_states = self.obs['robot0_joint_pos']
+        cos_joint = self.obs['robot0_joint_pos_cos']
+        sin_joint = self.obs['robot0_joint_pos_sin']
+        joint_states = np.arctan2(sin_joint, cos_joint)
         
-        agentview_rgb = self.obs['agentview_image']
-        eye_in_hand_rgb = self.obs['robot0_eye_in_hand_image']
+        cam_name = 'robot0_agentview_left'
+        rgb_img = self.env.sim.render(height=128, width=128, camera_name=cam_name)[::-1]
         
-        return joint_states, self.lang, [agentview_rgb, eye_in_hand_rgb]
+        return joint_states, self.lang, rgb_img
     
     def step(self, action):
         
         self.obs, reward, done, info = self.env.step(action)
         
-        cam_name = 'agentview_image'
-        frame = self.obs[cam_name]
-        frame = cv2.flip(frame, 0)
+        cam_name = 'robot0_agentview_left'
+        frame = self.env.sim.render(height=512, width=512, camera_name=cam_name)[::-1]
+        # frame = cv2.flip(frame, 0)
         frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
         self.episode_recording.append(frame)
         
@@ -126,17 +112,11 @@ class Player:
         del self.env
     
     def reset(self):
-        
-        self.env.reset()
-        
-        indice = self.num_episodes % self.init_states.shape[0]
-        self.obs = self.env.set_init_state(self.init_states[indice])
-        self.num_episodes += 1
-        
-        for _ in range(5):
-            self.obs, _, _, _ = self.env.step([0.0] * 7)
-        
+        self.obs = self.env.reset()
         self.episode_recording = []
+        
+        ep_meta = self.env.get_ep_meta()
+        self.lang = ep_meta.get("lang", None)
         
         time.sleep(3)
         print("start new episode!", self.lang)
