@@ -114,10 +114,10 @@ class CLIPBackBone(nn.Module):
     def __init__(self, model_name: str = "openai/clip-vit-base-patch32") -> None:
         super().__init__()
         
-        cache_name = "/home/zhaoyixiu/.cache/huggingface/hub/models--openai--clip-vit-base-patch32"
-        # self.body = CLIPModel.from_pretrained(cache_name)
+        cache_name = "/home/zhaoyixiu/ISR_project/CLIP/model"
+        self.body = CLIPModel.from_pretrained(cache_name)
         
-        self.body = CLIPModel.from_pretrained(model_name)
+        # self.body = CLIPModel.from_pretrained(model_name)
         
         self.body.eval()
     

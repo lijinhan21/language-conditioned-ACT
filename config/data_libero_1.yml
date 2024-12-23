@@ -1,0 +1,9 @@
+dataset_paths:
+  - '/home/zhaoyixiu/ISR_project/LIBERO/libero/datasets/libero_goal/open_the_middle_drawer_of_the_cabinet_demo.hdf5'
+
+camera_names:
+  - agentview_rgb
+  - eye_in_hand_rgb
+
+lan_instructions:
+  - null

@@ -53,7 +53,7 @@ def make_config(args):
     print(f"Task name: {task_name}")
     print("*"*20)
 
-    camera_names = ['agentview_rgb']
+    camera_names = ['agentview', 'robot0_eye_in_hand']
 
     # fixed parameters
     state_dim = args['state_dim'] 
@@ -116,7 +116,6 @@ def main(args):
     batch_size_train = args['batch_size']
     batch_size_val = args['batch_size']
     task_name = config['task_name']
-    camera_names = config['camera_names']
     ckpt_dir = config['ckpt_dir']
     
     mode = "disabled" if args["no_wandb"] or args["save_jit"] else "online"
@@ -124,7 +123,14 @@ def main(args):
     wandb.config.update(config)
     
     dataset_config = yaml.safe_load(open(args['config_path'], 'r'))
-    train_dataloader, val_dataloader, stats, _ = load_data(dataset_paths=dataset_config['dataset_paths'], camera_names=dataset_config['camera_names'], lan_instructions=dataset_config['lan_instructions'], batch_size_train=batch_size_train, batch_size_val=batch_size_val)
+    train_dataloader, val_dataloader, stats, _ = load_data(
+        dataset_paths=dataset_config['dataset_paths'], 
+        camera_names=dataset_config['camera_names'], 
+        lan_instructions=dataset_config['lan_instructions'], 
+        batch_size_train=batch_size_train, 
+        batch_size_val=batch_size_val)
+    
+    config['camera_names'] = dataset_config['camera_names']
 
     # save dataset stats
     if not os.path.isdir(ckpt_dir):
@@ -287,10 +293,10 @@ if __name__ == '__main__':
     parser.add_argument('--lr', action='store', type=float, help='lr', required=True)
     parser.add_argument('--qpos_noise_std', action='store', default=0, type=float, help='lr', required=False)
 
-    parser.add_argument('--backbone', action='store', type=str, default='resnet18', help='visual backbone, choose from resnet18, resnet34, dino_v2, CLIP', required=False)
+    parser.add_argument('--backbone', action='store', type=str, default='resnet34', help='visual backbone, choose from resnet18, resnet34, dino_v2, CLIP', required=False)
     parser.add_argument('--lang-backbone', action='store', type=str, default='CLIP', help='language backbone, choose from CLIP, onehot', required=False)
     parser.add_argument('--state_dim', action='store', type=int, default=7, help='state_dim', required=False)
-    parser.add_argument('--action_dim', action='store', type=int, default=12, help='action_dim', required=False)
+    parser.add_argument('--action_dim', action='store', type=int, default=7, help='action_dim', required=False)
     
     # for ACT
     parser.add_argument('--kl_weight', action='store', type=int, help='KL Weight', required=False)

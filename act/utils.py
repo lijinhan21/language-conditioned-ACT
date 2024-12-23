@@ -45,29 +45,44 @@ class EpisodicDataset(torch.utils.data.Dataset):
         # Read in all the data
         for idx, (dataset_path, lan_ins) in enumerate(zip(dataset_paths, lan_instructions)):
             num_episodes = find_episodes_num(dataset_path)
+            
             with h5py.File(dataset_path, 'r') as f:
                 root = f['data']
-                for episode_id in range(1, num_episodes+1):
+                
+                if lan_ins is not None:
+                    dataset_lan_ins = lan_ins
+                else:
+                    # For libero dataset
+                    problem_info_dict = json.loads(root.attrs['problem_info'])
+                    dataset_lan_ins = problem_info_dict['language_instruction']
+                    print("dataset_lan_ins=", dataset_lan_ins)
+                
+                for episode_id in range(num_episodes):
                     self.is_sims.append(None)
                     self.original_action_shapes.append(root[f'demo_{episode_id}']['actions'][()].shape)
                     
-                    ep_meta_dict = json.loads(root[f'demo_{episode_id}'].attrs['ep_meta'])
-                    lan_ins_from_ep = ep_meta_dict['lang']
-
-                    self.states.append(np.array(root[f'demo_{episode_id}']['obs']['robot0_joint_pos'][()]))
+                    # for robocasa dataset
+                    # ep_meta_dict = json.loads(root[f'demo_{episode_id}'].attrs['ep_meta'])
+                    # lan_ins_from_ep = ep_meta_dict['lang']
+                    
+                    self.states.append(np.array(root[f'demo_{episode_id}']['obs']['joint_states'][()]))
                     for cam_name in self.camera_names:
                         imgs = root[f'demo_{episode_id}']['obs'][cam_name][()]
                         # rearrange the image data to be in the form of (time, C, H, W)
                         imgs = rearrange(imgs, 't h w c -> t c h w')
                         self.image_dict[cam_name].append(imgs)
                     self.actions.append(np.array(root[f'demo_{episode_id}']['actions'][()]))
-                    if lan_ins is not None:
-                        self.language_instructions.append(lan_ins)
-                    else:
-                        self.language_instructions.append(lan_ins_from_ep)
+                    
+                    # for libero dataset
+                    self.language_instructions.append(dataset_lan_ins)
+                    # for robocasa dataset
+                    # if lan_ins is not None:
+                    #     self.language_instructions.append(lan_ins)
+                    # else:
+                    #     self.language_instructions.append(lan_ins_from_ep)
                         
                     # print("shape of state", self.states[-1].shape) # 7
-                    # print("shape of actions", self.actions[-1].shape) # 12
+                    # print("shape of actions", self.actions[-1].shape) # 7
                     # print("shape of imgs", self.image_dict[self.camera_names[0]][-1].shape) # 3, 128, 128
 
         # shuffle the data according to episode_ids
@@ -174,8 +189,8 @@ def get_norm_stats(dataset_paths, num_episodes):
         with h5py.File(dataset_path, 'r') as f:
             root = f['data']
             num_data_episodes = len(list(root.keys()))
-            for episode_idx in range(1, num_data_episodes+1):
-                qpos = root[f'demo_{episode_idx}']['obs']['robot0_joint_pos'][()]
+            for episode_idx in range(num_data_episodes):
+                qpos = root[f'demo_{episode_idx}']['obs']['joint_states'][()]
                 action = root[f'demo_{episode_idx}']['actions'][()]
                 # print("shape of qpos and action are:", qpos.shape, action.shape)
                 
@@ -199,7 +214,8 @@ def get_norm_stats(dataset_paths, num_episodes):
 
     stats = {"action_mean": action_mean.numpy().squeeze(), "action_std": action_std.numpy().squeeze(),
              "qpos_mean": qpos_mean.numpy().squeeze(), "qpos_std": qpos_std.numpy().squeeze(),
-             "example_qpos": qpos}
+             "example_qpos": qpos.shape
+             }
     print("stats: ", stats)
 
     return stats, all_episode_len
@@ -385,7 +401,7 @@ if __name__ == '__main__':
             None,
         ]
     
-    config_file_path = 'config/data2.yml'
+    config_file_path = 'config/data_libero_1.yml'
     config = yaml.safe_load(open(config_file_path, 'r'))
     
     dataset_paths = config['dataset_paths']

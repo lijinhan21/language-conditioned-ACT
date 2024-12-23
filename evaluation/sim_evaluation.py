@@ -129,7 +129,7 @@ if __name__ == '__main__':
     chunk_size = args['chunk_size']
     device = "cuda"
     
-    timestamps = 100 # max length of an episode
+    timestamps = 200 # max length of an episode
 
     norm_stats = get_norm_stats(norm_stat_path)
     policy = load_policy(config)
@@ -147,7 +147,7 @@ if __name__ == '__main__':
 
     model_name = "openai/clip-vit-base-patch32"
     cache_name = "/home/zhaoyixiu/ISR_project/CLIP/tokenizer"
-    CLIP_tokenizer = CLIPTokenizer.from_pretrained(model_name)
+    CLIP_tokenizer = CLIPTokenizer.from_pretrained(cache_name)
 
     if temporal_agg:
         all_time_actions = np.zeros([timestamps, timestamps+chunk_size, action_dim])
@@ -158,7 +158,7 @@ if __name__ == '__main__':
         output = None
         act_index = 0
         
-        num_episodes = 1
+        num_episodes = 3
         success_count = 0
         video_out = []
         for episode_idx in range(num_episodes):
