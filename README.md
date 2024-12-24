@@ -20,7 +20,15 @@ python act/imitate_episodes.py --policy_class ACT --kl_weight 10 --chunk_size 60
 
 CUDA_VISIBLE_DEVICES=1 python act/imitate_episodes.py --policy_class ACT --kl_weight 10 --chunk_size 60 --hidden_dim 512 --batch_size 45 --dim_feedforward 3200 --num_epochs 250000 --lr 5e-5 --seed 0 --task-name libero3 --exptid ten-tasks --config-path config/data_libero_10.yml
 
-[running: T4] CUDA_VISIBLE_DEVICES=0 python act/imitate_episodes.py --policy_class ACT --kl_weight 10 --chunk_size 60 --hidden_dim 512 --batch_size 45 --dim_feedforward 3200 --num_epochs 50000 --lr 5e-5 --seed 0 --task-name libero1 --exptid T4 --config-path config/data_libero_1_T4.yml
+CUDA_VISIBLE_DEVICES=0 python act/imitate_episodes.py --policy_class ACT --kl_weight 10 --chunk_size 60 --hidden_dim 512 --batch_size 45 --dim_feedforward 3200 --num_epochs 50000 --lr 5e-5 --seed 0 --task-name libero1 --exptid T4 --config-path config/data_libero_1_T4.yml
+
+CUDA_VISIBLE_DEVICES=0 python act/imitate_episodes.py --policy_class ACT --kl_weight 10 --chunk_size 60 --hidden_dim 512 --batch_size 45 --dim_feedforward 3200 --num_epochs 40003 --lr 5e-5 --seed 0 --task-name libero1 --exptid T8 --config-path config/data_libero_1_T8.yml
+
+[running] CUDA_VISIBLE_DEVICES=1 python act/imitate_episodes.py --policy_class ACT --kl_weight 10 --chunk_size 60 --hidden_dim 512 --batch_size 45 --dim_feedforward 3200 --num_epochs 80000 --lr 5e-5 --seed 0 --task-name libero3 --exptid 3tasks-onehot --config-path config/data_libero_3.yml --lang-backbone OneHot
+
+[revise one-hot embedding] CUDA_VISIBLE_DEVICES=0 python act/imitate_episodes.py --policy_class ACT --kl_weight 10 --chunk_size 60 --hidden_dim 512 --batch_size 45 --dim_feedforward 3200 --num_epochs 80000 --lr 5e-5 --seed 0 --task-name libero3 --exptid 3tasks-onehot-revise --config-path config/data_libero_3.yml --lang-backbone OneHot
+
+[onehot in lang ins] CUDA_VISIBLE_DEVICES=2 python act/imitate_episodes.py --policy_class ACT --kl_weight 10 --chunk_size 60 --hidden_dim 512 --batch_size 45 --dim_feedforward 3200 --num_epochs 80000 --lr 5e-5 --seed 0 --task-name libero3 --exptid 3tasks-onehot-lang --config-path config/data_libero_3_onehot.yml
 ```
 
 Evaluation:
@@ -30,7 +38,7 @@ python evaluation/sim_evaluation.py --policy_class ACT --kl_weight 10 --chunk_si
 
 python evaluation/sim_evaluation.py --policy_class ACT --kl_weight 10 --chunk_size 60 --hidden_dim 512 --batch_size 45 --dim_feedforward 3200 --num_epochs 50000 --lr 5e-5 --seed 0 --task-name data1 --exptid 3000mg --config-path config/data1.yml --resume_ckpt 40000
 
-CUDA_VISIBLE_DEVICES=1 python evaluation/sim_evaluation.py --policy_class ACT --kl_weight 10 --chunk_size 60 --hidden_dim 512 --batch_size 45 --dim_feedforward 3200 --num_epochs 50000 --lr 5e-5 --seed 0 --task-name libero1 --exptid open-middle-drawer --config-path config/data_libero_1.yml --resume_ckpt 10000
+CUDA_VISIBLE_DEVICES=1 python evaluation/sim_evaluation.py --policy_class ACT --kl_weight 10 --chunk_size 60 --hidden_dim 512 --batch_size 45 --dim_feedforward 3200 --num_epochs 50000 --lr 5e-5 --seed 0 --task-name libero1 --exptid open-middle-drawer --config-path config/data_libero_1.yml --resume_ckpt 40000
 
 CUDA_VISIBLE_DEVICES=1 python evaluation/sim_evaluation.py --policy_class ACT --kl_weight 10 --chunk_size 60 --hidden_dim 512 --batch_size 45 --dim_feedforward 3200 --num_epochs 80000 --lr 5e-5 --seed 0 --task-name libero3 --exptid first-three-tasks --config-path config/data_libero_3.yml --resume_ckpt 70000
 
@@ -40,12 +48,18 @@ CUDA_VISIBLE_DEVICES=2 python evaluation/sim_evaluation.py --policy_class ACT --
 CUDA_VISIBLE_DEVICES=1 python evaluation/sim_evaluation.py --policy_class ACT --kl_weight 10 --chunk_size 60 --hidden_dim 512 --batch_size 45 --dim_feedforward 3200 --num_epochs 80000 --lr 5e-5 --seed 0 --task-name libero3-revise --exptid first-three-tasks-onehot --config-path config/data_libero_3.yml --lang-backbone OneHot --resume_ckpt 70000
 
 CUDA_VISIBLE_DEVICES=1 python evaluation/sim_evaluation.py --policy_class ACT --kl_weight 10 --chunk_size 60 --hidden_dim 512 --batch_size 45 --dim_feedforward 3200 --num_epochs 250000 --lr 5e-5 --seed 0 --task-name libero3 --exptid ten-tasks --config-path config/data_libero_10.yml --resume_ckpt 240000
+
+CUDA_VISIBLE_DEVICES=0 python evaluation/sim_evaluation.py --policy_class ACT --kl_weight 10 --chunk_size 60 --hidden_dim 512 --batch_size 45 --dim_feedforward 3200 --num_epochs 50000 --lr 5e-5 --seed 0 --task-name libero1 --exptid T4 --config-path config/data_libero_1_T4.yml --resume_ckpt 40000
+
+CUDA_VISIBLE_DEVICES=1 python evaluation/sim_evaluation.py --policy_class ACT --kl_weight 10 --chunk_size 60 --hidden_dim 512 --batch_size 45 --dim_feedforward 3200 --num_epochs 80000 --lr 5e-5 --seed 0 --task-name libero3 --exptid 3tasks-onehot --config-path config/data_libero_3.yml --lang-backbone OneHot --resume_ckpt 40000
+
+CUDA_VISIBLE_DEVICES=2 python evaluation/sim_evaluation.py --policy_class ACT --kl_weight 10 --chunk_size 60 --hidden_dim 512 --batch_size 45 --dim_feedforward 3200 --num_epochs 40003 --lr 5e-5 --seed 0 --task-name libero1 --exptid T8 --config-path config/data_libero_1_T8.yml --resume_ckpt 40000
 ```
 
 ### TODOs
 
 - [ ] Finish training all multi-task policies (4 in total).
-    - [x] CLIP 3 tasks.
+    - [x] CLIP 3 tasks. (80000 epochs)
     - [x] CLIP 10 tasks. (250000 epochs)
     - [ ] OneHot 3 tasks. (Need to debug (add a linear and non-linear layer))
     - [ ] OneHot 10 tasks.
@@ -58,16 +72,32 @@ CUDA_VISIBLE_DEVICES=1 python evaluation/sim_evaluation.py --policy_class ACT --
     - [ ] OneHot 3 tasks.
     - [ ] OneHot 10 tasks.
 
-- [ ] Debug OneHot embedding.
+- [x] Debug OneHot embedding.
+    - [x] Add mlp to calculate embedding. (Running)
+    - [x] Add more regularization in mlp. (Running)
+    - [x] Use language index. (Running)
 
-- [ ] Implement a new task in the given environment: e.g. open the upper drawer; open the middle drawer and put the bowl in.
+- !! Either
 
-- [ ] Evaluate on new tasks.
+    - [ ] Implement a new task in the given environment: e.g. open the upper drawer; open the middle drawer and put the bowl in.
+    - [ ] Evaluate on new tasks.
 
-- [ ] Implement random embedding during testing.
+- !!!! Or use the task "put the wine bottle on top of the cabinet" as the testing task !!!!
+
+    - [ ] Train multi-task policies on 9 tasks
+        - [ ] CLIP
+        - [ ] OneHot
+    - [ ] Evaluate on the task "put the wine bottle on top of the cabinet".
 
 - [ ] Finish training selective single-task policy.
-    -[ ] T4 (Training)
+    - [x] T1 CLIP
+    - [x] T4 CLIP
+    - [x] T8 CLIP
+    - [ ] T1 OneHot
+    - [ ] T4 OneHot
+    - [ ] T8 OneHot
+
+- [ ] Implement random embedding during testing. [Optional]
 
 ### Experiment Plan:
 
@@ -75,16 +105,16 @@ CUDA_VISIBLE_DEVICES=1 python evaluation/sim_evaluation.py --policy_class ACT --
 
 Single-task policy:
 
-| | T1 | T2 | T3 | T4 | T5 | T6 | T7 | T8 | T9 | T10 |
-| ----- | ----- | ----- | ----- | ----- | ----- | ----- | ----- | ----- | ----- | ----- |
-|CLIP| | | | | | | | | | |
-|OneHot| | | | | | | | | | |
-|CLIP-randemb| | | | | | | | | | |
-|OneHot-randemb| | | | | | | | | | |
+| | T1 | T4 | T8 |
+| ----- | ----- | ----- | ----- |
+|CLIP| 80% (20000epochs) | 75% (40000epochs)| 85% (40000 epochs)|
+|OneHot| | | |
+|CLIP-randemb| | | |
+|OneHot-randemb| | | |
 
 3 tasks (data_libero_3.yml) :
 
-Evaluated over 20 trials.
+Evaluated over 20 trials. Trained 70000 epochs.
 
 |  | Task 1 | Task2 | Task3 |
 | ----- | ----- | ----- | ----- |
@@ -95,14 +125,14 @@ Evaluated over 20 trials.
 
 10 tasks (data_libero_10.yml):
 
-Evaluated over 20 trials.
+Evaluated over 20 trials. Trained 240000 epochs.
 
 | | T1 | T2 | T3 | T4 | T5 | T6 | T7 | T8 | T9 | T10 |
 | ----- | ----- | ----- | ----- | ----- | ----- | ----- | ----- | ----- | ----- | ----- |
 | CLIP | 85% | 75% | 65% | 60% | 75% | 95% | 60% | 70% | 70% | 95% |
 | OneHot | | | | | | | | | | |
-|CLIP-randemb| | | | | | | | | | |
-|OneHot-randemb| | | | | | | | | | |
+| CLIP-randemb | | | | | | | | | | |
+| OneHot-randemb | | | | | | | | | | |
 
 **Test CLIP and one-hot on unseen task**
 

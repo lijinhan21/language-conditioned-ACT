@@ -44,7 +44,7 @@ from pathlib import Path
 current_dir = Path(__file__).parent.resolve()
 
 class Player:
-    def __init__(self, dataset, num_envs=1):
+    def __init__(self, dataset, num_envs=1, lang=None):
 
         bddl_folder = get_libero_path("bddl_files")
         
@@ -79,7 +79,10 @@ class Player:
             [lambda: OffScreenRenderEnv(**env_args) for _ in range(self.env_num)]
         )
 
-        self.lang = data_desc
+        if lang is not None:
+            self.lang = lang
+        else:
+            self.lang = data_desc
         self.task = task
         
         self.init_states = benchmark_instance.get_task_init_states(task_id)

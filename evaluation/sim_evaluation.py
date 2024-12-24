@@ -15,6 +15,7 @@ import cv2
 from collections import deque
 import argparse
 import sys
+import os
 
 from einops import rearrange
 
@@ -177,7 +178,7 @@ if __name__ == '__main__':
         print("start evaluating task ", task_idx + 1, "/", num_tasks)
         
         bsz = 10
-        player = Player(dataset_paths[task_idx], num_envs = bsz)
+        player = Player(dataset_paths[task_idx], num_envs = bsz, lang=dataset_config['lan_instructions'][task_idx])
 
         if temporal_agg:
             all_time_actions = torch.zeros([bsz, timestamps, timestamps+chunk_size, action_dim], device='cuda')
@@ -234,7 +235,7 @@ if __name__ == '__main__':
             print("Success rate:", success_count / (num_episodes * bsz))
             all_tasks_success_rates.append(success_count / (num_episodes * bsz))
             
-            player.render_multiple_episode_video(video_out, current_dir, f"{config['task_name']}_{config['exptid']}_eval_{config['resume_ckpt']}_task_{task_idx}.mp4")
+            player.render_multiple_episode_video(video_out, os.path.join(current_dir, 'videos'), f"{config['task_name']}_{config['exptid']}_eval_{config['resume_ckpt']}_task_{task_idx}.mp4")
         
         except KeyboardInterrupt:
             player.end()

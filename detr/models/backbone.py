@@ -113,7 +113,28 @@ class DINOv2BackBone(nn.Module):
 class OneHotBackBone(nn.Module):
     def __init__(self) -> None:
         super().__init__()
+        self.vocab_dim = 15
         self.output_dim = 512
+        self.hidden_dim = 1024
+        
+        # self.body = nn.Sequential(
+        #     nn.Linear(self.vocab_dim, self.hidden_dim),
+        #     nn.ReLU(),
+        #     nn.Linear(self.hidden_dim, self.output_dim),
+        # )
+        
+        # New Version:!!!!
+        self.body = nn.Sequential(
+            nn.Linear(self.vocab_dim, self.hidden_dim),
+            nn.LayerNorm(self.hidden_dim),
+            nn.ReLU(),
+            nn.Linear(self.hidden_dim, self.output_dim),
+            nn.LayerNorm(self.output_dim)
+        )
+        
+        # 使用正交初始化确保task embedding初始就有明显区分
+        nn.init.orthogonal_(self.body[0].weight, gain=1.4)  # 增大gain使区分更明显
+        nn.init.orthogonal_(self.body[3].weight, gain=1.4)
         
         # 预定义所有可能的语言指令
         self.all_possible_lang = [
@@ -175,7 +196,7 @@ class OneHotBackBone(nn.Module):
         device = tokenized_inputs["input_ids"].device
         
         # 初始化输出 tensor
-        text_features = torch.zeros((batch_size, self.output_dim), device=device)
+        text_features = torch.zeros((batch_size, self.vocab_dim), device=device)
         
         # 对每个序列生成 one-hot 向量
         for i in range(batch_size):
@@ -191,7 +212,9 @@ class OneHotBackBone(nn.Module):
         # print("feature 0:", text_features[0][:10])
         
         od = OrderedDict()
-        od["text_features"] = text_features
+        od["text_features"] = self.body(text_features)
+        
+        # print("text_features=", od["text_features"][0][:10])
         
         return od
 
