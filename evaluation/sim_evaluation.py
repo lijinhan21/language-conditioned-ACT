@@ -47,32 +47,46 @@ def load_policy(config):
     
     return policy
 
-def normalize_input(state, lang, images, norm_stats, CLIP_tokenizer):
+def normalize_input(state, lang, images, norm_stats, CLIP_tokenizer, bsz=1):
     
-    all_cam_images = []
-    for image in images:
-        all_cam_images.append(rearrange(image, 'h w c -> c h w'))
-    image_data = torch.from_numpy(np.stack([all_cam_images], axis=0)) / 255.0
-    image_data = image_data.view((1, len(all_cam_images), 3, 128, 128)).float().to(device='cuda') 
-    
+    all_image_data = torch.zeros((bsz, len(images[0]), 3, 128, 128), device='cuda')
     state_dim = len(norm_stats["qpos_mean"])
-    qpos_data = (torch.from_numpy(state) - norm_stats["qpos_mean"]) / norm_stats["qpos_std"]
-    qpos_data = qpos_data.view((1, state_dim)).float().to(device='cuda')
-
-    lang_data = CLIP_tokenizer(
-            lang, 
-            padding='max_length', 
-            truncation=True, 
-            max_length=25,
-            return_tensors="pt"
-    )
-    for key in lang_data.keys():
-        lang_data[key] = lang_data[key].cuda()
+    all_qpos_data = torch.zeros((bsz, state_dim), device='cuda')
+    all_lang_data = {
+        'input_ids': torch.zeros((bsz, 1, 25), device='cuda', dtype=torch.int64),
+        'attention_mask': torch.zeros((bsz, 1, 25), device='cuda', dtype=torch.int64),
+    }
     
-    # print("shapes:", qpos_data.shape, image_data.shape)
-    # print("lang_tokens", lang_data)
+    for i in range(bsz):
+        
+        all_cam_images = []
+        for image in images[i]:
+            all_cam_images.append(rearrange(image, 'h w c -> c h w'))
+        image_data = torch.from_numpy(np.stack([all_cam_images], axis=0)) / 255.0
+        image_data = image_data.view((1, len(all_cam_images), 3, 128, 128)).float().to(device='cuda') 
+        all_image_data[i] = image_data
+        
+        state_dim = len(norm_stats["qpos_mean"])
+        qpos_data = (torch.from_numpy(state[i]) - norm_stats["qpos_mean"]) / norm_stats["qpos_std"]
+        qpos_data = qpos_data.view((1, state_dim)).float().to(device='cuda')
+        all_qpos_data[i] = qpos_data
+        
+        lang_data = CLIP_tokenizer(
+                lang, 
+                padding='max_length', 
+                truncation=True, 
+                max_length=25,
+                return_tensors="pt"
+        )
+        for key in lang_data.keys():
+            lang_data[key] = lang_data[key].cuda()
+            all_lang_data[key][i][0] = lang_data[key]
     
-    return (qpos_data, image_data, lang_data) 
+    # print("shapes:", all_qpos_data.shape, all_image_data.shape)
+    # for key in all_lang_data.keys():
+    #     print("lang_tokens", key, all_lang_data[key].shape)
+    
+    return (all_qpos_data, all_image_data, all_lang_data) 
 
 
 def merge_act(actions_for_curr_step, k = 0.01):
@@ -131,7 +145,7 @@ if __name__ == '__main__':
     chunk_size = args['chunk_size']
     device = "cuda"
     
-    timestamps = 250 # max length of an episode
+    timestamps = 220 # max length of an episode
 
     norm_stats = get_norm_stats(norm_stat_path)
     policy = load_policy(config)
@@ -152,14 +166,21 @@ if __name__ == '__main__':
 
     num_tasks = len(dataset_paths)
     all_tasks_success_rates = []
+    finished_idx = 0
     
     for task_idx in range(num_tasks):
 
+        if task_idx < finished_idx:
+            print("task", task_idx, "already finished. Move on to the next task.")
+            continue
+        
         print("start evaluating task ", task_idx + 1, "/", num_tasks)
-        player = Player(dataset_paths[task_idx])
+        
+        bsz = 10
+        player = Player(dataset_paths[task_idx], num_envs = bsz)
 
         if temporal_agg:
-            all_time_actions = np.zeros([timestamps, timestamps+chunk_size, action_dim])
+            all_time_actions = torch.zeros([bsz, timestamps, timestamps+chunk_size, action_dim], device='cuda')
         else:
             num_actions_exe = chunk_size
         
@@ -167,7 +188,7 @@ if __name__ == '__main__':
             output = None
             act_index = 0
             
-            num_episodes = 4
+            num_episodes = 2
             success_count = 0
             video_out = []
             for episode_idx in range(num_episodes):
@@ -178,42 +199,47 @@ if __name__ == '__main__':
                         last_action_data = np.array(last_action_queue)
 
                     state, lang, images = player.get_state_and_images()
-                    data = normalize_input(state, lang, images, norm_stats, CLIP_tokenizer)
+                    data = normalize_input(state, lang, images, norm_stats, CLIP_tokenizer, bsz=bsz)
 
                     if temporal_agg:
-                        output = policy(*data)[0].detach().cpu().numpy() # (1,chuck_size,action_dim)
-                        all_time_actions[[t], t:t+chunk_size] = output
-                        act = merge_act(all_time_actions[:, t])
-                    else:
-                        if output is None or act_index == num_actions_exe-1:
-                            print("Inference...")
-                            output = policy(*data)[0].detach().cpu().numpy()
-                            act_index = 0
-                        act = output[act_index]
-                        act_index += 1
+                        output = policy(*data).detach() #.cpu().numpy() # (bsz,chuck_size,action_dim)
+                        
+                        all_time_actions[:, t, t:t+chunk_size] = output
+                
+                        num_answers_t = min(t+1, chunk_size)
+                        all_actions_at_t = all_time_actions[:, t-num_answers_t+1:t+1, t, :]
+                        k = 0.01
+                        weights = torch.exp(-k * torch.arange(num_answers_t).float()).to(device)
+                        weights = weights / torch.sum(weights)
+                        raw_action = torch.sum(all_actions_at_t * weights.unsqueeze(-1), dim=1)
+                        
+                        act = raw_action.cpu().numpy()
+                        
+                        # import pdb; pdb.set_trace()
+                        
+                        # all_time_actions[[t], t:t+chunk_size] = output
+                        # act = merge_act(all_time_actions[:, t])
+                    
                     # import ipdb; ipdb.set_trace()
-                    if history_stack > 0:
-                        last_action_queue.append(act)
+                    
                     act = act * norm_stats["action_std"] + norm_stats["action_mean"]
                     reward, done = player.step(act)
-                    if done:
-                        if reward > 0:
-                            print("Success!")
-                            success_count += 1
-                        else:
-                            print("Failed!")
-                        break
                 
-                video_out.append(player.get_episode_recording())
+                for k in range(bsz):
+                    success_count += int(player.dones[k])
+                
+                video_out.extend(player.get_episode_recording())
                 player.reset()
             
-            print("Success rate:", success_count / num_episodes)
-            all_tasks_success_rates.append(success_count / num_episodes)
+            print("Success rate:", success_count / (num_episodes * bsz))
+            all_tasks_success_rates.append(success_count / (num_episodes * bsz))
             
             player.render_multiple_episode_video(video_out, current_dir, f"{config['task_name']}_{config['exptid']}_eval_{config['resume_ckpt']}_task_{task_idx}.mp4")
         
         except KeyboardInterrupt:
             player.end()
             exit()
+        
+        player.end()
             
     print("success rate on all tasks:", all_tasks_success_rates)

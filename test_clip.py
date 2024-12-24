@@ -33,6 +33,9 @@ class CLIPTextEmbedding:
             print(f"Max token ID in inputs: {inputs.input_ids.max()}")
             print(f"Min token ID in inputs: {inputs.input_ids.min()}")
             
+            for key in inputs.keys():
+                print("inputs=", inputs[key].dtype)
+            
             text_features = self.model.get_text_features(**{k: v.to(self.device) for k, v in inputs.items()})
             # inputs = {k: v.to(self.device) for k, v in inputs.items()}
             

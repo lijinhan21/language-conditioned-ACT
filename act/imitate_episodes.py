@@ -181,6 +181,7 @@ def forward_pass(data, policy):
     image_data, qpos_data, action_data, is_pad = image_data.cuda(), qpos_data.cuda(), action_data.cuda(), is_pad.cuda()
     for key in lang_data.keys():
         lang_data[key] = lang_data[key].cuda()
+        # print("shape of lang_data", key, lang_data[key].shape)
     return policy(qpos_data, image_data, lang_data, action_data, is_pad) 
 
 def train_bc(train_dataloader, val_dataloader, config):
@@ -257,7 +258,12 @@ def load_ckpt(policy, ckpt_dir, ckpt_name):
     print("*"*20)
     print(f"Resuming from {resume_path}")
     print("*"*20)
-    policy.load_state_dict(torch.load(resume_path))
+    
+    state_dict = torch.load(resume_path)
+    policy.load_state_dict(state_dict)
+    
+    print("keys in ckpt", state_dict.keys())
+    
     return policy, ckpt_name, epoch
 
 def save_jit(config):

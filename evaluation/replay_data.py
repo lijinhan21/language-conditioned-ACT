@@ -44,7 +44,7 @@ from pathlib import Path
 current_dir = Path(__file__).parent.resolve()
 
 class Player:
-    def __init__(self, dataset):
+    def __init__(self, dataset, num_envs=1):
 
         bddl_folder = get_libero_path("bddl_files")
         
@@ -73,7 +73,11 @@ class Player:
             "camera_widths": 128,
         }
 
-        self.env =  OffScreenRenderEnv(**env_args)
+        self.env_num = num_envs
+        # self.env =  OffScreenRenderEnv(**env_args)
+        self.env = SubprocVectorEnv(
+            [lambda: OffScreenRenderEnv(**env_args) for _ in range(self.env_num)]
+        )
 
         self.lang = data_desc
         self.task = task
@@ -87,57 +91,78 @@ class Player:
         
     def get_state_and_images(self):
         
-        joint_states = self.obs['robot0_joint_pos']
+        joint_states = []
+        for i in range(self.env_num):
+            joint_states.append(self.obs[i]['robot0_joint_pos'])
         
-        agentview_rgb = self.obs['agentview_image']
-        eye_in_hand_rgb = self.obs['robot0_eye_in_hand_image']
+        agentview_rgb = []
+        for i in range(self.env_num):
+            agentview_rgb.append(self.obs[i]['agentview_image'])
+            
+        eye_in_hand_rgb = []
+        for i in range(self.env_num):
+            eye_in_hand_rgb.append(self.obs[i]['robot0_eye_in_hand_image'])
+            
+        images = []
+        for i in range(self.env_num):
+            images.append([agentview_rgb[i], eye_in_hand_rgb[i]])
         
-        return joint_states, self.lang, [agentview_rgb, eye_in_hand_rgb]
+        return joint_states, self.lang, images
     
     def step(self, action):
         
         self.obs, reward, done, info = self.env.step(action)
         
         cam_name = 'agentview_image'
-        frame = self.obs[cam_name]
-        frame = cv2.flip(frame, 0)
-        frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-        self.episode_recording.append(frame)
-        
-        if done:
-            print("Episode done!")
-            if reward > 0.5:
-                green_filter = np.zeros_like(frame)
-                green_filter[:, :, 1] = 255
-                alpha = 0.2
-                success_img = cv2.addWeighted(frame, 1 - alpha, green_filter, alpha, 0)
-                self.episode_recording.append(success_img)
-            else:
-                red_filter = np.zeros_like(frame)
-                red_filter[:, :, 2] = 255
-                alpha = 0.2
-                fail_img = cv2.addWeighted(frame, 1 - alpha, red_filter, alpha, 0)
-                self.episode_recording.append(fail_img)
+        for i in range(self.env_num):
+            frame = self.obs[i][cam_name]
+            frame = cv2.flip(frame, 0)
+            frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+
+            if self.dones[i] == False:
+                if done[i]:
+                    print("Episode done!")
+                    self.dones[i] = True
+                    if reward[i] > 0.5:
+                        green_filter = np.zeros_like(frame)
+                        green_filter[:, :, 1] = 255
+                        alpha = 0.2
+                        success_img = cv2.addWeighted(frame, 1 - alpha, green_filter, alpha, 0)
+                        self.episode_recording[i].append(success_img)
+                    else:
+                        red_filter = np.zeros_like(frame)
+                        red_filter[:, :, 2] = 255
+                        alpha = 0.2
+                        fail_img = cv2.addWeighted(frame, 1 - alpha, red_filter, alpha, 0)
+                        self.episode_recording[i].append(fail_img)
+                else:
+                    self.episode_recording[i].append(frame)
         
         time.sleep(1/20)
         
         return reward, done
 
     def end(self):
+        self.env.close()
         del self.env
     
     def reset(self):
         
         self.env.reset()
         
-        indice = self.num_episodes % self.init_states.shape[0]
-        self.obs = self.env.set_init_state(self.init_states[indice])
-        self.num_episodes += 1
+        # indice = self.num_episodes % self.init_states.shape[0]
+        indices = (self.num_episodes + np.arange(self.env_num)) % self.init_states.shape[0]
+        self.obs = self.env.set_init_state(self.init_states[indices])
+        self.num_episodes += self.env_num
         
         for _ in range(5):
-            self.obs, _, _, _ = self.env.step([0.0] * 7)
+            self.obs, _, _, _ = self.env.step(np.zeros((self.env_num, 7)))
         
         self.episode_recording = []
+        self.dones = []
+        for i in range(self.env_num):
+            self.episode_recording.append([])
+            self.dones.append(False)
         
         time.sleep(3)
         print("start new episode!", self.lang)
