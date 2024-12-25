@@ -34,9 +34,9 @@ CUDA_VISIBLE_DEVICES=1 python act/imitate_episodes.py --policy_class ACT --kl_we
 
 [T459_onehot: finished] CUDA_VISIBLE_DEVICES=0 python act/imitate_episodes.py --policy_class ACT --kl_weight 10 --chunk_size 60 --hidden_dim 512 --batch_size 45 --dim_feedforward 3200 --num_epochs 80000 --lr 5e-5 --seed 0 --task-name libero3 --exptid onehot-T459 --config-path config/data_libero_3_T459.yml --lang-backbone OneHot
 
-[9tasks_CLIP: running] CUDA_VISIBLE_DEVICES=1 python act/imitate_episodes.py --policy_class ACT --kl_weight 10 --chunk_size 60 --hidden_dim 512 --batch_size 45 --dim_feedforward 3200 --num_epochs 250005 --lr 5e-5 --seed 0 --task-name libero3 --exptid 9tasks-CLIP --config-path config/data_libero_9.yml 
+[9tasks_CLIP: finished] CUDA_VISIBLE_DEVICES=1 python act/imitate_episodes.py --policy_class ACT --kl_weight 10 --chunk_size 60 --hidden_dim 512 --batch_size 45 --dim_feedforward 3200 --num_epochs 250005 --lr 5e-5 --seed 0 --task-name libero3 --exptid 9tasks-CLIP --config-path config/data_libero_9.yml 
 
-[9tasks_onehot: running] CUDA_VISIBLE_DEVICES=0 python act/imitate_episodes.py --policy_class ACT --kl_weight 10 --chunk_size 60 --hidden_dim 512 --batch_size 45 --dim_feedforward 3200 --num_epochs 250005 --lr 5e-5 --seed 0 --task-name libero3 --exptid 9tasks-onehot --config-path config/data_libero_9.yml --lang-backbone OneHot
+[9tasks_onehot: finished] CUDA_VISIBLE_DEVICES=0 python act/imitate_episodes.py --policy_class ACT --kl_weight 10 --chunk_size 60 --hidden_dim 512 --batch_size 45 --dim_feedforward 3200 --num_epochs 250005 --lr 5e-5 --seed 0 --task-name libero3 --exptid 9tasks-onehot --config-path config/data_libero_9.yml --lang-backbone OneHot
 ```
 
 Evaluation:
@@ -74,30 +74,30 @@ CUDA_VISIBLE_DEVICES=2 python evaluation/sim_evaluation.py --policy_class ACT --
 
 [9tasks_CLIP] CUDA_VISIBLE_DEVICES=1 python evaluation/sim_evaluation.py --policy_class ACT --kl_weight 10 --chunk_size 60 --hidden_dim 512 --batch_size 45 --dim_feedforward 3200 --num_epochs 250005 --lr 5e-5 --seed 0 --task-name libero3 --exptid 9tasks-CLIP --config-path config/data_libero_9.yml --resume_ckpt 250000
 
-[9tasks_onehot: running] CUDA_VISIBLE_DEVICES=1 python evaluation/sim_evaluation.py --policy_class ACT --kl_weight 10 --chunk_size 60 --hidden_dim 512 --batch_size 45 --dim_feedforward 3200 --num_epochs 250005 --lr 5e-5 --seed 0 --task-name libero3 --exptid 9tasks-onehot --config-path config/data_libero_9.yml --lang-backbone OneHot
+[9tasks_onehot] CUDA_VISIBLE_DEVICES=2 python evaluation/sim_evaluation.py --policy_class ACT --kl_weight 10 --chunk_size 60 --hidden_dim 512 --batch_size 45 --dim_feedforward 3200 --num_epochs 250005 --lr 5e-5 --seed 0 --task-name libero3 --exptid 9tasks-onehot --config-path config/data_libero_9.yml --lang-backbone OneHot --resume_ckpt 250000
 ```
 
 ### TODOs
 
-- [ ] Finish training all multi-task policies (4 in total).
+- [x] Finish training all multi-task policies (4 in total).
     - [x] CLIP 3 tasks. (80000 epochs)
     - [x] CLIP 10 tasks. (250000 epochs)
     - [x] OneHot 3 tasks.
     - [x] CLIP T459 
     - [x] OneHot T459 
     - [x] CLIP 9 tasks.
-    - [ ] OneHot 9 tasks.
+    - [x] OneHot 9 tasks.
 
 - [x] Implement parallel evaluation (multiple environments at a time).
 
-- [ ] Finish the evaluation of all multi-task policies.
+- [x] Finish the evaluation of all multi-task policies.
     - [x] CLIP 3 tasks. 
     - [x] CLIP 10 tasks.
     - [x] OneHot 3 tasks.
     - [x] CLIP T459
     - [x] OneHot T459 
     - [x] CLIP 9 tasks
-    - [ ] OneHot 9 tasks
+    - [x] OneHot 9 tasks
 
 - [x] Debug OneHot embedding.
     - [x] Add mlp to calculate embedding. (Won't work)
@@ -159,8 +159,11 @@ T6 : put the bowl on top of the cabinet
 
 | | T1 | T2 | T3 | T4 | T5 | T7 | T8 | T9 | T10 |
 | ----- | ----- | ----- | ----- | ----- | ----- | ----- | ----- | ----- | ----- |
-| CLIP | 75% | 60% | 70% | 55% | 80% | 75% | 65% | 75% | 100% |
-| OneHot | | | | | | | | | | |
+| CLIP (25000) | 75% | 60% | 70% | 55% | 80% | 75% | 65% | 75% | 100% |
+| CLIP (24000) | 95% | 70% | 55% | 50% | 90% | 70% | 75% | 75% | 100% |
+| OneHot (25000) | 95% | 60% | 55% | 70% | 75% | 60% | 75% | 50% | 100% |
+| OneHot (24000) | 100% | 75% | 55% | 70% | 80% | 60% | 80% | 65% | 90% |
+
 
 10 tasks (data_libero_10.yml):
 
@@ -177,7 +180,7 @@ Evaluated over 20 trials. Trained 240000 epochs.
 
 | | CLIP-3 | CLIP-9  | OneHot-3 | OneHot-9 |
 | ----- | ----- | ----- | ----- | ----- |
-|T6| 0% | 5% | 0% | |
+|T6| 0% | 5% | 0% | 0% |
 
 ## Installation
 
