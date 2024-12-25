@@ -1,0 +1,28 @@
+dataset_paths:
+  - '/home/zhaoyixiu/ISR_project/LIBERO/libero/datasets/libero_goal/open_the_middle_drawer_of_the_cabinet_demo.hdf5'
+  - '/home/zhaoyixiu/ISR_project/LIBERO/libero/datasets/libero_goal/open_the_top_drawer_and_put_the_bowl_inside_demo.hdf5'
+  - '/home/zhaoyixiu/ISR_project/LIBERO/libero/datasets/libero_goal/push_the_plate_to_the_front_of_the_stove_demo.hdf5'
+  - '/home/zhaoyixiu/ISR_project/LIBERO/libero/datasets/libero_goal/put_the_bowl_on_the_plate_demo.hdf5'
+  - '/home/zhaoyixiu/ISR_project/LIBERO/libero/datasets/libero_goal/put_the_bowl_on_the_stove_demo.hdf5'
+  - '/home/zhaoyixiu/ISR_project/LIBERO/libero/datasets/libero_goal/put_the_cream_cheese_in_the_bowl_demo.hdf5'
+  - '/home/zhaoyixiu/ISR_project/LIBERO/libero/datasets/libero_goal/put_the_wine_bottle_on_the_rack_demo.hdf5'
+  - '/home/zhaoyixiu/ISR_project/LIBERO/libero/datasets/libero_goal/put_the_wine_bottle_on_top_of_the_cabinet_demo.hdf5'
+  - '/home/zhaoyixiu/ISR_project/LIBERO/libero/datasets/libero_goal/turn_on_the_stove_demo.hdf5'
+
+camera_names:
+  - agentview_rgb
+  - eye_in_hand_rgb
+
+lan_instructions:
+  - null
+  - null
+  - null
+  - null
+  - null
+  - null
+  - null
+  - null
+  - null
+
+generalize_dataset:
+  - '/home/zhaoyixiu/ISR_project/LIBERO/libero/datasets/libero_goal/put_the_bowl_on_top_of_the_cabinet_demo.hdf5'

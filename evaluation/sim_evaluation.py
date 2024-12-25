@@ -242,5 +242,79 @@ if __name__ == '__main__':
             exit()
         
         player.end()
+    
+    num_tasks = 0
+    if 'generalize_dataset' in dataset_config:
+        gen_dataset_path = dataset_config['generalize_dataset']
+        num_tasks = len(gen_dataset_path)
+    for task_idx in range(num_tasks):
+        
+        print("start evaluating task (unseen) ", task_idx + 1, "/", num_tasks)
+        
+        bsz = 10
+        player = Player(gen_dataset_path[task_idx], num_envs = bsz, lang=None)
+
+        if temporal_agg:
+            all_time_actions = torch.zeros([bsz, timestamps, timestamps+chunk_size, action_dim], device='cuda')
+        else:
+            num_actions_exe = chunk_size
+        
+        try:
+            output = None
+            act_index = 0
+            
+            num_episodes = 2
+            success_count = 0
+            video_out = []
+            for episode_idx in range(num_episodes):
+                print("Episode", episode_idx)
+                
+                for t in tqdm(range(timestamps)):
+                    if history_stack > 0:
+                        last_action_data = np.array(last_action_queue)
+
+                    state, lang, images = player.get_state_and_images()
+                    data = normalize_input(state, lang, images, norm_stats, CLIP_tokenizer, bsz=bsz)
+
+                    if temporal_agg:
+                        output = policy(*data).detach() #.cpu().numpy() # (bsz,chuck_size,action_dim)
+                        
+                        all_time_actions[:, t, t:t+chunk_size] = output
+                
+                        num_answers_t = min(t+1, chunk_size)
+                        all_actions_at_t = all_time_actions[:, t-num_answers_t+1:t+1, t, :]
+                        k = 0.01
+                        weights = torch.exp(-k * torch.arange(num_answers_t).float()).to(device)
+                        weights = weights / torch.sum(weights)
+                        raw_action = torch.sum(all_actions_at_t * weights.unsqueeze(-1), dim=1)
+                        
+                        act = raw_action.cpu().numpy()
+                        
+                        # import pdb; pdb.set_trace()
+                        
+                        # all_time_actions[[t], t:t+chunk_size] = output
+                        # act = merge_act(all_time_actions[:, t])
+                    
+                    # import ipdb; ipdb.set_trace()
+                    
+                    act = act * norm_stats["action_std"] + norm_stats["action_mean"]
+                    reward, done = player.step(act)
+                
+                for k in range(bsz):
+                    success_count += int(player.dones[k])
+                
+                video_out.extend(player.get_episode_recording())
+                player.reset()
+            
+            print("Success rate:", success_count / (num_episodes * bsz))
+            all_tasks_success_rates.append(success_count / (num_episodes * bsz))
+            
+            player.render_multiple_episode_video(video_out, os.path.join(current_dir, 'videos'), f"{config['task_name']}_{config['exptid']}_eval_{config['resume_ckpt']}_generalize_task_{task_idx}.mp4")
+        
+        except KeyboardInterrupt:
+            player.end()
+            exit()
+        
+        player.end()
             
     print("success rate on all tasks:", all_tasks_success_rates)
