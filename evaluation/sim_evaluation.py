@@ -100,6 +100,35 @@ def merge_act(actions_for_curr_step, k = 0.01):
 
     return raw_action
 
+def output_embedding(model, all_lang, CLIP_tokenizer):
+    
+    bsz = len(all_lang)
+    all_lang_data = {
+        'input_ids': torch.zeros((bsz, 1, 25), device='cuda', dtype=torch.int64),
+        'attention_mask': torch.zeros((bsz, 1, 25), device='cuda', dtype=torch.int64),
+    }
+    
+    for i, lang in enumerate(all_lang):
+        lang_data = CLIP_tokenizer(
+                lang, 
+                padding='max_length', 
+                truncation=True, 
+                max_length=25,
+                return_tensors="pt"
+        )
+        for key in lang_data.keys():
+            lang_data[key] = lang_data[key].cuda()
+            all_lang_data[key][i][0] = lang_data[key]
+    
+    print("shape of langdata:", all_lang_data.keys(), all_lang_data['input_ids'].shape, all_lang_data['attention_mask'].shape)
+    
+    with torch.no_grad():
+        output = model.model.lang_backbone(all_lang_data)['text_features']
+        print("shape of output is:", output.shape)
+        # import pdb; pdb.set_trace()
+    
+    return output
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--eval', action='store_true')
@@ -165,9 +194,36 @@ if __name__ == '__main__':
     cache_name = "/home/zhaoyixiu/ISR_project/CLIP/tokenizer"
     CLIP_tokenizer = CLIPTokenizer.from_pretrained(cache_name)
 
+    # ---
+    
+    # output language embedding
+    all_possible_lang = [
+        "open the middle drawer of the cabinet",
+        "put the bowl on the stove",
+        "put the wine bottle on top of the cabinet",
+        "open the top drawer and put the bowl inside",
+        "put the bowl on top of the cabinet",
+        "push the plate to the front of the stove",
+        "put the cream cheese in the bowl",
+        "turn on the stove",
+        "put the bowl on the plate",
+        "put the wine bottle on the rack",
+    ]
+    lang = "open the middle drawer of the cabinet"
+    output = output_embedding(policy, all_possible_lang, CLIP_tokenizer)
+    
+    # save output
+    output = output.cpu().numpy()
+    np.save(f"output_lang_emb_{args['exptid']}.npy", output)
+    
+    # exit(0)
+    
+    # ---
+
+
     num_tasks = len(dataset_paths)
     all_tasks_success_rates = []
-    finished_idx = 0
+    finished_idx = 9
     
     for task_idx in range(num_tasks):
 
@@ -251,7 +307,7 @@ if __name__ == '__main__':
         
         print("start evaluating task (unseen) ", task_idx + 1, "/", num_tasks)
         
-        bsz = 10
+        bsz = 20
         player = Player(gen_dataset_path[task_idx], num_envs = bsz, lang=None)
 
         if temporal_agg:
@@ -263,7 +319,7 @@ if __name__ == '__main__':
             output = None
             act_index = 0
             
-            num_episodes = 2
+            num_episodes = 5
             success_count = 0
             video_out = []
             for episode_idx in range(num_episodes):
