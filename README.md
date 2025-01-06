@@ -48,25 +48,25 @@ python benchmark_scripts/download_libero_datasets.py --datasets libero_goal
 ### Training Scripts
 
 ```
-[T459: finished] CUDA_VISIBLE_DEVICES=0 python act/imitate_episodes.py --policy_class ACT --kl_weight 10 --chunk_size 60 --hidden_dim 512 --batch_size 45 --dim_feedforward 3200 --num_epochs 80000 --lr 5e-5 --seed 0 --task-name libero3 --exptid T459 --config-path config/data_libero_3_T459.yml 
+[T459 CLIP] CUDA_VISIBLE_DEVICES=0 python act/imitate_episodes.py --policy_class ACT --kl_weight 10 --chunk_size 60 --hidden_dim 512 --batch_size 45 --dim_feedforward 3200 --num_epochs 80000 --lr 5e-5 --seed 0 --task-name libero3 --exptid T459 --config-path config/data_libero_3_T459.yml 
 
-[T459_onehot: finished] CUDA_VISIBLE_DEVICES=0 python act/imitate_episodes.py --policy_class ACT --kl_weight 10 --chunk_size 60 --hidden_dim 512 --batch_size 45 --dim_feedforward 3200 --num_epochs 80000 --lr 5e-5 --seed 0 --task-name libero3 --exptid onehot-T459 --config-path config/data_libero_3_T459.yml --lang-backbone OneHot
+[T459 onehot] CUDA_VISIBLE_DEVICES=0 python act/imitate_episodes.py --policy_class ACT --kl_weight 10 --chunk_size 60 --hidden_dim 512 --batch_size 45 --dim_feedforward 3200 --num_epochs 80000 --lr 5e-5 --seed 0 --task-name libero3 --exptid onehot-T459 --config-path config/data_libero_3_T459.yml --lang-backbone OneHot
 
-[9tasks_CLIP: finished] CUDA_VISIBLE_DEVICES=1 python act/imitate_episodes.py --policy_class ACT --kl_weight 10 --chunk_size 60 --hidden_dim 512 --batch_size 45 --dim_feedforward 3200 --num_epochs 250005 --lr 5e-5 --seed 0 --task-name libero3 --exptid 9tasks-CLIP --config-path config/data_libero_9.yml 
+[9tasks CLIP] CUDA_VISIBLE_DEVICES=1 python act/imitate_episodes.py --policy_class ACT --kl_weight 10 --chunk_size 60 --hidden_dim 512 --batch_size 45 --dim_feedforward 3200 --num_epochs 250005 --lr 5e-5 --seed 0 --task-name libero3 --exptid 9tasks-CLIP --config-path config/data_libero_9.yml 
 
-[9tasks_onehot: finished] CUDA_VISIBLE_DEVICES=0 python act/imitate_episodes.py --policy_class ACT --kl_weight 10 --chunk_size 60 --hidden_dim 512 --batch_size 45 --dim_feedforward 3200 --num_epochs 250005 --lr 5e-5 --seed 0 --task-name libero3 --exptid 9tasks-onehot --config-path config/data_libero_9.yml --lang-backbone OneHot
+[9tasks onehot] CUDA_VISIBLE_DEVICES=0 python act/imitate_episodes.py --policy_class ACT --kl_weight 10 --chunk_size 60 --hidden_dim 512 --batch_size 45 --dim_feedforward 3200 --num_epochs 250005 --lr 5e-5 --seed 0 --task-name libero3 --exptid 9tasks-onehot --config-path config/data_libero_9.yml --lang-backbone OneHot
 ```
 
 ### Evaluation Scripts
 
 ```
-[T459 one-hot] CUDA_VISIBLE_DEVICES=0 python evaluation/sim_evaluation.py --policy_class ACT --kl_weight 10 --chunk_size 60 --hidden_dim 512 --batch_size 45 --dim_feedforward 3200 --num_epochs 80000 --lr 5e-5 --seed 0 --task-name libero3 --exptid onehot-T459 --config-path config/data_libero_3_T459.yml --lang-backbone OneHot --resume_ckpt 70000
+[T459 CLIP] python evaluation/sim_evaluation.py --policy_class ACT --kl_weight 10 --chunk_size 60 --hidden_dim 512 --batch_size 45 --dim_feedforward 3200 --num_epochs 80000 --lr 5e-5 --seed 0 --task-name libero3 --exptid T459 --config-path config/data_libero_3_T459.yml --resume_ckpt 70000
 
-[T459 CLIP] CUDA_VISIBLE_DEVICES=1 python evaluation/sim_evaluation.py --policy_class ACT --kl_weight 10 --chunk_size 60 --hidden_dim 512 --batch_size 45 --dim_feedforward 3200 --num_epochs 80000 --lr 5e-5 --seed 0 --task-name libero3 --exptid T459 --config-path config/data_libero_3_T459.yml --resume_ckpt 70000
+[T459 onehot] python evaluation/sim_evaluation.py --policy_class ACT --kl_weight 10 --chunk_size 60 --hidden_dim 512 --batch_size 45 --dim_feedforward 3200 --num_epochs 80000 --lr 5e-5 --seed 0 --task-name libero3 --exptid onehot-T459 --config-path config/data_libero_3_T459.yml --lang-backbone OneHot --resume_ckpt 70000
 
-[9tasks_CLIP] CUDA_VISIBLE_DEVICES=1 python evaluation/sim_evaluation.py --policy_class ACT --kl_weight 10 --chunk_size 60 --hidden_dim 512 --batch_size 45 --dim_feedforward 3200 --num_epochs 250005 --lr 5e-5 --seed 0 --task-name libero3 --exptid 9tasks-CLIP --config-path config/data_libero_9.yml --resume_ckpt 250000
+[9tasks CLIP] python evaluation/sim_evaluation.py --policy_class ACT --kl_weight 10 --chunk_size 60 --hidden_dim 512 --batch_size 45 --dim_feedforward 3200 --num_epochs 250005 --lr 5e-5 --seed 0 --task-name libero3 --exptid 9tasks-CLIP --config-path config/data_libero_9.yml --resume_ckpt 250000
 
-[9tasks_onehot] CUDA_VISIBLE_DEVICES=1 python evaluation/sim_evaluation.py --policy_class ACT --kl_weight 10 --chunk_size 60 --hidden_dim 512 --batch_size 45 --dim_feedforward 3200 --num_epochs 250005 --lr 5e-5 --seed 0 --task-name libero3 --exptid 9tasks-onehot --config-path config/data_libero_9.yml --lang-backbone OneHot --resume_ckpt 250000
+[9tasks onehot] python evaluation/sim_evaluation.py --policy_class ACT --kl_weight 10 --chunk_size 60 --hidden_dim 512 --batch_size 45 --dim_feedforward 3200 --num_epochs 250005 --lr 5e-5 --seed 0 --task-name libero3 --exptid 9tasks-onehot --config-path config/data_libero_9.yml --lang-backbone OneHot --resume_ckpt 250000
 ```
 
 To draw the embedding similarity graph, see `scripts/emb_similarity.ipynb`.
@@ -149,18 +149,18 @@ The embedding similarity graph for CLIP-3, CLIP-9, OneHot-3, OneHot-9 are drawn 
 
 ## Conclusions
 
-- Can we successfully train an end-to-end language-conditioned multi-task policy?
-    - <font color=purple>Yes!</font>
+- **Can we successfully train an end-to-end language-conditioned multi-task policy?**
+    - Yes!
 
-- How does performance change if we replace language instructions with one-hot vectors? 
-    - <font color=purple>One-hot embeddings can reflect motion similarity, while language embedding can capture both semantics and motions.</font>
-    - <font color=purple>No significant difference in success rates on trained tasks.</font>
+- **How does performance change if we replace language instructions with one-hot vectors?**
+    - One-hot embeddings can reflect motion similarity, while language embedding can capture both semantics and motions.
+    - No significant difference in success rates on trained tasks.
 
-    - Does the use of language help generalization? 
-        - <font color=purple>Not yet. </font>
-    - How do the number of tasks and the scale of data influence the results?
-        - <font color=purple>A slightly lower success rate on individual tasks when trained with more tasks.</font>
-        - <font color=purple>Learned (slightly) better task representations with more trained tasks.</font>
+    - **Does the use of language help generalization?**
+        - Not yet. 
+    - **How do the number of tasks and the scale of data influence the results?**
+        - A slightly lower success rate on individual tasks when trained with more tasks.
+        - Learned (slightly) better task representations with more trained tasks.
 
 
 ---
