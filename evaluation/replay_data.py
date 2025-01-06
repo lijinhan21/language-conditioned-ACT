@@ -212,23 +212,4 @@ class Player:
 
 if __name__ == '__main__':
     
-    dataset_path = '/data/william/dataset_absjoint_ice_40.hdf5' # TODO: change with actual dataset path
-    
-    with h5py.File(dataset_path, 'r') as f:
-        root = f['data']['demo_0']
-        actions = np.array(root['actions'][()])
-        agentview_rgb = np.array(root['obs']['agentview_rgb'][()])
-        states = np.array(root['obs']['joint_states'][()])
-    
-    timestamps = states.shape[0]
-    single_arm = (len(actions[0]) == 13)
-    
-    player = Player(single_arm)
-    
-    try:
-        for t in tqdm(range(timestamps)):
-            player.step(actions[t], agentview_rgb[t])
-        player.render_single_episode_video(current_dir, 'test_dataset.mp4')
-    except KeyboardInterrupt:
-        player.end()
-        exit()
+    pass

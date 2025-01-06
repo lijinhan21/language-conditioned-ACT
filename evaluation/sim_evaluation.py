@@ -223,7 +223,7 @@ if __name__ == '__main__':
 
     num_tasks = len(dataset_paths)
     all_tasks_success_rates = []
-    finished_idx = 9
+    finished_idx = 0
     
     for task_idx in range(num_tasks):
 
